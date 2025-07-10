@@ -165,15 +165,15 @@ void setup() {
   config.tx_config.idle_output_en = true;
   config.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
 
-  esp_err_t err = rmt_config(&config);
-  if (err != ESP_OK) {
-    Serial.printf("RMT config failed: %d\n", err);
+  esp_err_t err2 = rmt_config(&config);
+  if (err2 != ESP_OK) {
+    Serial.printf("RMT config failed: %d\n", err2);
     return;
   }
 
-  err = rmt_driver_install(RMT_CH_2, 0, 0);
-  if (err != ESP_OK) {
-    Serial.printf("RMT install failed: %d\n", err);
+  err2 = rmt_driver_install(RMT_CH_2, 0, 0);
+  if (err2 != ESP_OK) {
+    Serial.printf("RMT install failed: %d\n", err2);
     return;
   }
 
@@ -184,14 +184,14 @@ void setup() {
   config.tx_config.idle_output_en = true;
   config.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
 
-  esp_err_t err = rmt_config(&config);
-  if (err != ESP_OK) {
-    Serial.printf("RMT config failed: %d\n", err);
+  esp_err_t err3 = rmt_config(&config);
+  if (err3 != ESP_OK) {
+    Serial.printf("RMT config failed: %d\n", err3);
     return;
   }
 
-  err = rmt_driver_install(RMT_CH_3, 0, 0);
-  if (err != ESP_OK) {
+  err3 = rmt_driver_install(RMT_CH_3, 0, 0);
+  if (err3 != ESP_OK) {
     Serial.printf("RMT install failed: %d\n", err);
     return;
   }
@@ -203,15 +203,15 @@ void setup() {
   config2.tx_config.idle_output_en = true;
   config2.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
 
-  esp_err_t err2 = rmt_config(&config2);
-  if (err2 != ESP_OK) {
-    Serial.printf("RMT config failed for CH2: %d\n", err2);
+  esp_err_t err4 = rmt_config(&config2);
+  if (err4 != ESP_OK) {
+    Serial.printf("RMT config failed for CH2: %d\n", err4);
     return;
   }
 
-  err2 = rmt_driver_install(RMT_CH_4, 0, 0);
-  if (err2 != ESP_OK) {
-    Serial.printf("RMT install failed for CH2: %d\n", err2);
+  err4 = rmt_driver_install(RMT_CH_4, 0, 0);
+  if (err4 != ESP_OK) {
+    Serial.printf("RMT install failed for CH2: %d\n", err4);
     return;
   }
 
