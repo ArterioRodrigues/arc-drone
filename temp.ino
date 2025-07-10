@@ -12,6 +12,11 @@
 #define RMT_CH_4 RMT_CHANNEL_4
 #define RMT_CH_2 RMT_CHANNEL_2
 
+#define MOTOR_PIN_1 GPIO_NUM_14
+#define MOTOR_PIN_3 GPIO_NUM_12
+#define RMT_CH_1 RMT_CHANNEL_1
+#define RMT_CH_3 RMT_CHANNEL_3
+
 // DShot600 timing calculations
 #define T0H_NS 625
 #define T0L_NS 1041  
@@ -26,7 +31,7 @@
 
 // Known working values from your testing
 #define NEUTRAL_THROTTLE 0
-#define MOTOR_RANGE 2048 // Motor goes up to 48 - 2048
+#define MOTOR_RANGE 1500 // Motor goes up to 48 - 2048
 #define CONTROLLER_RANGE 1024 // -512, 512
 
 rmt_item32_t dshot_bit0;
@@ -64,20 +69,24 @@ bool sendDshotReliable(uint16_t throttle) {
   }
 
   items[16] = dshot_pause;
-
-  esp_err_t err1 = rmt_write_items(RMT_CH_2, items, 17, false);
-  esp_err_t err2 = rmt_write_items(RMT_CH_4, items, 17, false);
   
-  if (err1 != ESP_OK || err2 != ESP_OK) {
+  esp_err_t err1 = rmt_write_items(RMT_CH_1, items, 17, false);
+  esp_err_t err2 = rmt_write_items(RMT_CH_2, items, 17, false);
+  esp_err_t err3 = rmt_write_items(RMT_CH_3, items, 17, false);
+  esp_err_t err4 = rmt_write_items(RMT_CH_4, items, 17, false);
+  
+  if (err1 != ESP_OK || err2 != ESP_OK || err3 != ESP_OK || err4 != ESP_OK) {
     Serial.printf("RMT send error - CH1: %d, CH2: %d\n", err1, err2);
     return false;
   }
 
   // Wait for both channels to complete
-  err1 = rmt_wait_tx_done(RMT_CH_2, pdMS_TO_TICKS(1));
-  err2 = rmt_wait_tx_done(RMT_CH_4, pdMS_TO_TICKS(1));
+  err1 = rmt_wait_tx_done(RMT_CH_1, pdMS_TO_TICKS(1));
+  err2 = rmt_wait_tx_done(RMT_CH_2, pdMS_TO_TICKS(1));
+  err3 = rmt_wait_tx_done(RMT_CH_3, pdMS_TO_TICKS(1));
+  err4 = rmt_wait_tx_done(RMT_CH_4, pdMS_TO_TICKS(1));
   
-  return (err1 == ESP_OK && err2 == ESP_OK);
+  return (err1 == ESP_OK && err2 == ESP_OK && err3 == ESP_OK && err4 == ESP_OK);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -131,7 +140,7 @@ void setup() {
   dshot_pause.duration1 = 0;
 
   // Configure RMT
-  rmt_config_t config = RMT_DEFAULT_CONFIG_TX(MOTOR_PIN_4, RMT_CH_4);
+  rmt_config_t config = RMT_DEFAULT_CONFIG_TX(MOTOR_PIN_1, RMT_CH_1);
   config.clk_div = 1;  // 80MHz
   config.mem_block_num = 2;
   config.tx_config.idle_output_en = true;
@@ -143,14 +152,52 @@ void setup() {
     return;
   }
 
-  err = rmt_driver_install(RMT_CH_4, 0, 0);
+  err = rmt_driver_install(RMT_CH_1, 0, 0);
+  if (err != ESP_OK) {
+    Serial.printf("RMT install failed: %d\n", err);
+    return;
+  }
+
+  // Configure RMT
+  rmt_config_t config = RMT_DEFAULT_CONFIG_TX(MOTOR_PIN_2, RMT_CH_2);
+  config.clk_div = 1;  // 80MHz
+  config.mem_block_num = 2;
+  config.tx_config.idle_output_en = true;
+  config.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
+
+  esp_err_t err = rmt_config(&config);
+  if (err != ESP_OK) {
+    Serial.printf("RMT config failed: %d\n", err);
+    return;
+  }
+
+  err = rmt_driver_install(RMT_CH_2, 0, 0);
+  if (err != ESP_OK) {
+    Serial.printf("RMT install failed: %d\n", err);
+    return;
+  }
+
+  // Configure RMT
+  rmt_config_t config = RMT_DEFAULT_CONFIG_TX(MOTOR_PIN_3, RMT_CH_3);
+  config.clk_div = 1;  // 80MHz
+  config.mem_block_num = 2;
+  config.tx_config.idle_output_en = true;
+  config.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
+
+  esp_err_t err = rmt_config(&config);
+  if (err != ESP_OK) {
+    Serial.printf("RMT config failed: %d\n", err);
+    return;
+  }
+
+  err = rmt_driver_install(RMT_CH_3, 0, 0);
   if (err != ESP_OK) {
     Serial.printf("RMT install failed: %d\n", err);
     return;
   }
 
   // Configure RMT for second channel (pin 2)
-  rmt_config_t config2 = RMT_DEFAULT_CONFIG_TX(MOTOR_PIN_2, RMT_CH_2);
+  rmt_config_t config2 = RMT_DEFAULT_CONFIG_TX(MOTOR_PIN_4, RMT_CH_4);
   config2.clk_div = 1;  // 80MHz
   config2.mem_block_num = 2;
   config2.tx_config.idle_output_en = true;
@@ -162,7 +209,7 @@ void setup() {
     return;
   }
 
-  err2 = rmt_driver_install(RMT_CH_2, 0, 0);
+  err2 = rmt_driver_install(RMT_CH_4, 0, 0);
   if (err2 != ESP_OK) {
     Serial.printf("RMT install failed for CH2: %d\n", err2);
     return;
