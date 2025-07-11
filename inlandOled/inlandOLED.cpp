@@ -1,5 +1,11 @@
 #include "inlandOLED.h"
 
+enum FontSize {
+    FONT_SIZE_6 = 6,
+    FONT_SIZE_7 = 7,
+    FONT_SIZE_8 = 8
+}
+
 InlandOLED::InlandOLED(int clockPin, int dataPin, int csPin, int dcPin, int resetPin) {
     this->_u8g2 = new U8G2_SH1106_128X64_NONAME_F_4W_SW_SPI(U8G2_R0, clockPin, dataPin, csPin, dcPin, resetPin);
 }
@@ -11,7 +17,7 @@ void InlandOLED::setup() {
 void InlandOLED::flipScreen(bool flip) {
     this->_u8g2->setFlipMode(flip);
 }
-void InlandOLED::setFont(int fontSize) { 
+void InlandOLED::setFont(FontSize fontSize) { 
     switch (fontSize) {
         case 6:
             this->_u8g2->setFont(u8g2_font_6x10_tf);

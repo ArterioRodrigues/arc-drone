@@ -12,9 +12,28 @@
 //     return (uint16_t)((input + 512) * MOTOR_RANGE / CONTROLLER_RANGE);
 // }
 MPU6050 mpu;
+InlandOLED oled(18, 23, 5, 2, 4);
+
+void draw() {
+    oled.clearBuffer();
+    oled.setFont(FONT_SIZE_7);
+    oled.drawStr(2, 13, "ESP32 Display");
+    oled.drawLine(2, 16, 128 - 2, 16);
+    
+    oled.setFont(FONT_SIZE_6);
+    oled.drawStr(2, 30, "Hello World!"); 
+    oled.drawStr(2, 43, "Hello Inland!");
+    oled.drawStr(2, 56, "U8g2 Library");
+
+    oled.sendBuffer();
+}
+
 void setup(void) {
     Serial.begin(115200);
     mpu.setup();
+    oled.setup();
+    oled.flipScreen(true);
+
     // Controller controller;
     // DShot600 esc;
 }
