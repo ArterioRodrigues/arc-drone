@@ -65,7 +65,7 @@ void MPU6050::displayFilterBandwidth() {
 
 void MPU6050::setup() {
     Serial.println("Searching for MPU6050 setup...");
-     Serial.println("Initializing MPU6050 with custom SDA 20 and SCL 21 pins...");
+    Serial.println("Initializing MPU6050 with custom SDA 20 and SCL 21 pins...");
     if (!this->_mpu.begin()) {
         Serial.println("Failed to find MPU6050 chip....");
         Serial.println("Please check the wiring and try again.");
@@ -92,7 +92,6 @@ MPU6050::MPU6050(){}
 MPU6050::MPU6050(int sdaPin, int sclPin) {
     Wire.begin(sdaPin, sclPin);
     Serial.println("Initializing MPU6050 with custom SDA and SCL pins...");
-    MPU6050();
 }
 
 sensors_vec_t MPU6050::getAcceleration() {
