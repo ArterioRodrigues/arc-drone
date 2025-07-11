@@ -11,19 +11,20 @@
 class MPU6050 {
     public: 
         MPU6050();
+        void setup();
         MPU6050(int sdaPin, int sclPin);
         
-        sensort_event_t getAcceleration();
-        sensort_event_t getGyro();
-        sensort_event_t getTemperature();
+        sensors_vec_t getAcceleration();
+        sensors_vec_t getGyro();
+        float getTemperature();
 
         void dumpSensorDetails();
     private:
         Adafruit_MPU6050 _mpu;
-        sensort_event_t _acceleration;
-        sensort_event_t _gyro;
-        sensort_event_t _temperature;
+        sensors_event_t _acceleration;
+        sensors_event_t _gyro;
+        sensors_event_t _temperature;
         void displayAccelerometerRange();
         void displayGyroRange();
         void displayFilterBandwidth();
-}
+};
