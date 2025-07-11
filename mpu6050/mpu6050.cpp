@@ -1,4 +1,4 @@
-#inlcude "mpu6050.h"
+#include "mpu6050.h"
 
 void MPU6050::displayAccelerometerRange() {
     Serial.print("Accelerometer range set to: ");
@@ -63,8 +63,9 @@ void MPU6050::displayFilterBandwidth() {
   }
 }
 
-void MPU6050::MPU6050() {
+void MPU6050::setup() {
     Serial.println("Searching for MPU6050 setup...");
+     Serial.println("Initializing MPU6050 with custom SDA 20 and SCL 21 pins...");
     if (!this->_mpu.begin()) {
         Serial.println("Failed to find MPU6050 chip....");
         Serial.println("Please check the wiring and try again.");
@@ -83,25 +84,26 @@ void MPU6050::MPU6050() {
     displayGyroRange();
     displayFilterBandwidth();
 
-    this->mpu.getEvent(&this->_acceleration, &this->_gyro, &this->_temperature);
+    this->_mpu.getEvent(&this->_acceleration, &this->_gyro, &this->_temperature);
 }
 
+MPU6050::MPU6050(){}
 
-void MPU6050::MPU6050(int sdaPin, int sclPin) {
+MPU6050::MPU6050(int sdaPin, int sclPin) {
     Wire.begin(sdaPin, sclPin);
-    Serial.println("Initializing MPU6050 with custom SDA and SCL pins...", sdaPin, " ", sclPin);
+    Serial.println("Initializing MPU6050 with custom SDA and SCL pins...");
     MPU6050();
 }
 
-sensort_vec_t MPU6050::getAcceleration() {
+sensors_vec_t MPU6050::getAcceleration() {
     this->_mpu.getEvent(&_acceleration, &_gyro, &_temperature);
     return this->_acceleration.acceleration;
 }
-sensort_vec_t MPU6050::getGyro() {
+sensors_vec_t MPU6050::getGyro() {
     this->_mpu.getEvent(&_acceleration, &_gyro, &_temperature);
     return this->_gyro.gyro;
 }
-sensort_vec_t MPU6050::getTemperature() {
+float MPU6050::getTemperature() {
     this->_mpu.getEvent(&_acceleration, &_gyro, &_temperature);
     return this->_temperature.temperature;
 }
