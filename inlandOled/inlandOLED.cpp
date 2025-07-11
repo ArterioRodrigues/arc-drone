@@ -11,6 +11,37 @@ void InlandOLED::setup() {
 void InlandOLED::flipScreen(bool flip) {
     this->_u8g2->setFlipMode(flip);
 }
+void InlandOLED::setFont(int fontSize) { 
+    switch (fontSize) {
+        case 6:
+            this->_u8g2->setFont(u8g2_font_6x10_tf);
+            break;
+        case 7:
+            this->_u8g2->setFont(u8g2_font_7x13_tf);
+            break;
+        case 8:
+            this->_u8g2->setFont(u8g2_font_8x13_tf);
+            break;
+        default:
+            Serial.println("Unsupported font size. Using default 6x10.");
+            this->_u8g2->setFont(u8g2_font_6x10_tf);
+    }
+}
+void InlandOLED::drawStr(int x, int y, const char* str) {
+    this->_u8g2->drawStr(x, y, str);
+}
+void InlandOLED::drawLine(int x0, int y0, int x1, int y1) {
+    this->_u8g2->drawLine(x0, y0, x1, y1);
+}
+void InlandOLED::clearBuffer() {
+    this->_u8g2->clearBuffer();
+}
+void InlandOLED::sendBuffer() {
+    this->_u8g2->sendBuffer();
+}
+InlandOLED::~InlandOLED() {
+    delete this->_u8g2;
+}
 U8G2_SH1106_128X64_NONAME_F_4W_SW_SPI* InlandOLED::getDisplay() {
     return this->_u8g2;
 }
