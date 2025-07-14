@@ -1,12 +1,18 @@
 #pragma once
 #include <U8g2lib.h>
 
+enum FONTSIZE {
+    FONT_SIZE_6 = 6,
+    FONT_SIZE_7 = 7,
+    FONT_SIZE_8 = 8
+}
+
 class InlandOLED {
     public:
         InlandOLED(int clockPin, int dataPin, int csPin, int dcPin, int resetPin);
         void setup();
         void flipScreen(bool flip);
-        void setFont(int fontSize);
+        void setFont(FONTSIZE fontSize);
         void drawStr(int x, int y, const char* str);
         void drawLine(int x0, int y0, int x1, int y1);
         void clearBuffer();
