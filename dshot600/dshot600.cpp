@@ -20,7 +20,7 @@ void rmtSetup(gpio_num_t motorPin, rmt_channel_t channel) {
     }
 }
 
-DShot600::DShot600(gpio_num_t motorPin1, gpio_num_t motorPin2, gpio_num_t motorPin3, gpio_num_t motorPin4, 
+DShot600::DShot600(DShot dshot, gpio_num_t motorPin1, gpio_num_t motorPin2, gpio_num_t motorPin3, gpio_num_t motorPin4, 
             rmt_channel_t channel1, rmt_channel_t channel2, rmt_channel_t channel3, rmt_channel_t channel4){
     Serial.pintln("Initializing DShot600 with default pins and channels...");
     this->_motorPin1 = motorPin1;
@@ -33,20 +33,20 @@ DShot600::DShot600(gpio_num_t motorPin1, gpio_num_t motorPin2, gpio_num_t motorP
     this->_channel3 = channel3;
     this->_channel4 = channel4;
 
-    dShotBit0.level0 = 1;
-    dShotBit0.duration0 = T0H;
-    dShotBit0.level1 = 0;
-    dShotBit0.duration1 = T0L;
+    this->_dShotBit0.level0 = 1;
+    this->_dShotBit0.duration0 = T0H;
+    this->_dShotBit0.level1 = 0;
+    this->_dShotBit0.duration1 = T0L;
 
-    dShotBit1.level0 = 1;
-    dShotBit1.duration0 = T1H;
-    dShotBit1.level1 = 0;
-    dShotBit1.duration1 = T1L;
+    this->_dShotBit1.level0 = 1;
+    this->_dShotBit1.duration0 = T1H;
+    this->_dShotBit1.level1 = 0;
+    this->_dShotBit1.duration1 = T1L;
 
-    dShotPause.level0 = 0;
-    dShotPause.duration0 = 2000;
-    dShotPause.level1 = 0;
-    dShotPause.duration1 = 0;
+    this->_dShotPause.level0 = 0;
+    this->_dShotPause.duration0 = 2000;
+    this->_dShotPause.level1 = 0;
+    this->_dShotPause.duration1 = 0;
     
     Serial.println("Configuring RMT channels...");
 
@@ -76,13 +76,13 @@ void DShot600::sendDShotPacket(uint16_t throttle) {
 
     for(int i = 15; i >= 0; i--) {
         if (packet & (1 << i)) {
-        items[15-i] = dshot_bit1;
+        items[15-i] = this->_dShotBit1;
         } else {
-        items[15-i] = dshot_bit0;
+        items[15-i] = this->dShotBit0;
         }
     }
 
-    items[16] = dshot_pause;
+    items[16] = this->_dShotPause;
     
     esp_err_t error1 = rmt_write_items(this->_channel1, items, 17, false);
     esp_err_t error2 = rmt_write_items(this->_channel2, items, 17, false);
