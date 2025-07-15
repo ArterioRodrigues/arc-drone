@@ -2,7 +2,6 @@
 #include <Arduino.h>
 #include <driver/rmt.h>
 #include <algorithm>
-#include "./rmt/rmt.h"
 
 
 //default motor pins and RMT channels
@@ -30,11 +29,17 @@
 
 #define NEUTRAL_THROTTLE 0
 
-class DShot {
+enum DSHOT {
+    DSHOT600 = 0,
+    DSHOT300 = 1,
+};
+
+class ESC {
     public:
-        DShot(DSHOT dshot, gpio_num_t motorPin1 = MOTOR_PIN_1, gpio_num_t motorPin2 = MOTOR_PIN_2, gpio_num_t motorPin3 = MOTOR_PIN_3, gpio_num_t motorPin4 = MOTOR_PIN_4, 
+        ESC(DSHOT dshot, gpio_num_t motorPin1 = MOTOR_PIN_1, gpio_num_t motorPin2 = MOTOR_PIN_2, gpio_num_t motorPin3 = MOTOR_PIN_3, gpio_num_t motorPin4 = MOTOR_PIN_4, 
                  rmt_channel_t channel1 = RMT_CH_1, rmt_channel_t channel2 = RMT_CH_2, rmt_channel_t channel3 = RMT_CH_3, rmt_channel_t channel4 = RMT_CH_4);
-        void sendDShotPacket(uint16_t throttle);
+        void setup();
+        boolean sendDShotPacket(uint16_t throttle);
         void dumpPacketBinary(uint16_t packet, uint16_t throttle);
     private:
             rmt_item32_t _dShotBit0;
@@ -50,4 +55,6 @@ class DShot {
             rmt_channel_t _channel2;
             rmt_channel_t _channel3;
             rmt_channel_t _channel4;
-}   
+
+            DSHOT _dshot;
+};
