@@ -12,7 +12,7 @@ enum FontSize {
     FONT_SIZE_11 = 11,
     FONT_SIZE_12 = 12
 };
-
+// InlandOLED oled(18, 19, 5, 16, 17); // Example pin numbers for clock, data, CS, DC, reset
 class InlandOLED {
     public:
         InlandOLED(int clockPin, int dataPin, int csPin, int dcPin, int resetPin);
