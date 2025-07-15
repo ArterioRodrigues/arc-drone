@@ -1,10 +1,4 @@
-#include "DShot.h"
-
-enum DSHOT {
-    DSHOT600 = 0,
-    DSHOT300 = 1,
-}
-
+#include "esc.h"
 
 void rmtSetup(gpio_num_t motorPin, rmt_channel_t channel) {
     rmt_config_t config = RMT_DEFAULT_CONFIG_TX(motorPin, channel);
@@ -26,7 +20,7 @@ void rmtSetup(gpio_num_t motorPin, rmt_channel_t channel) {
     }
 }
 
-DShot::DShot(DSHOT dshot, gpio_num_t motorPin1, gpio_num_t motorPin2, gpio_num_t motorPin3, gpio_num_t motorPin4, 
+ESC::ESC(DSHOT dshot, gpio_num_t motorPin1, gpio_num_t motorPin2, gpio_num_t motorPin3, gpio_num_t motorPin4, 
             rmt_channel_t channel1, rmt_channel_t channel2, rmt_channel_t channel3, rmt_channel_t channel4){
     this->_motorPin1 = motorPin1;
     this->_motorPin2 = motorPin2;
@@ -38,6 +32,7 @@ DShot::DShot(DSHOT dshot, gpio_num_t motorPin1, gpio_num_t motorPin2, gpio_num_t
     this->_channel3 = channel3;
     this->_channel4 = channel4;
     
+    this->_dshot = dshot;
     switch(dshot) {
         case DSHOT::DSHOT600:
             this->_dShotBit0.level0 = 1;
@@ -71,8 +66,8 @@ DShot::DShot(DSHOT dshot, gpio_num_t motorPin1, gpio_num_t motorPin2, gpio_num_t
     
 
 }
-void DShot::setup() {
-    Serial.pintln("Initializing DShot with default pins and channels...");
+void ESC::setup() {
+    Serial.println("Initializing DShot with default pins and channels...");
     Serial.println("Configuring RMT channels...");
 
     rmtSetup(this->_motorPin1, this->_channel1);
@@ -84,13 +79,21 @@ void DShot::setup() {
     Serial.println("Arming ESC...");
 
     for(int i = 0; i < 200; i++) {
-        sendDshotReliable(NEUTRAL_THROTTLE);
-        delayMicroseconds(1000);
+        this->sendDShotPacket(NEUTRAL_THROTTLE);
+        switch(this->_dshot){
+            case DSHOT::DSHOT600:
+                delayMicroseconds(2000);
+                break;
+            case DSHOT::DSHOT300:
+                delayMicroseconds(4000);
+                break;
+        }
+        
     }
 
     Serial.println("ESC Armed!");
 }
-void DShot::sendDShotPacket(uint16_t throttle) {
+boolean ESC::sendDShotPacket(uint16_t throttle) {
     uint16_t packet = (throttle << 1);
     uint16_t checksum = checksum = ((packet >> 0) ^ (packet >> 4) ^ (packet >> 8)) & 0xF;
     packet = (packet << 4) | (checksum & 0xF);
@@ -101,7 +104,7 @@ void DShot::sendDShotPacket(uint16_t throttle) {
         if (packet & (1 << i)) {
         items[15-i] = this->_dShotBit1;
         } else {
-        items[15-i] = this->dShotBit0;
+        items[15-i] = this->_dShotBit0;
         }
     }
 
@@ -125,7 +128,7 @@ void DShot::sendDShotPacket(uint16_t throttle) {
     return (error1 == ESP_OK && error2 == ESP_OK && error3 == ESP_OK && error4 == ESP_OK);
 }
 
-void DShot::dumpPacketBinary(uint16_t packet, uint16_t throttle) {
+void ESC::dumpPacketBinary(uint16_t packet, uint16_t throttle) {
     Serial.printf("Throttle value:  %u (0x%04X)\n", throttle, throttle);
     Serial.printf("Packet value: %u (0x%04X)\n", packet, packet);
     Serial.print("Binary: ");
