@@ -1,7 +1,7 @@
 #include "controller.h"
 
-drone:Controller::Controller() {}
-void drone:Controller::setup() {
+drone::Controller::Controller() {}
+void drone::Controller::setup() {
     Serial.println("Initializing Bluepad32...");
     Serial.printf("Firmware: %s\n", BP32.firmwareVersion());
     const uint8_t* address = BP32.localBdAddress();
@@ -11,19 +11,19 @@ void drone:Controller::setup() {
     BP32.forgetBluetoothKeys();
     BP32.enableVirtualDevice(false);
 }
-void drone:Controller::onConnectedController(ControllerPtr ctl) {
-    controller = ctl;
+void onConnectedController(ControllerPtr controller) {
+    _controller = controller;
 }
 
-void drone:Controller::onDisconnectedController(ControllerPtr ctl) {
-    controller = nullptr;
+void onDisconnectedController(ControllerPtr controller) {
+    _controller = nullptr;
 }
 
-ControllerPtr drone:Controller::getController() {
-    return controller;
+ControllerPtr drone::Controller::getController() {
+    return _controller;
 }
 
-void drone:Controller::processController(Callback callback) {
+void drone::Controller::processController(Callback callback) {
     bool dataUpdated = BP32.update();
     if(dataUpdated) {
         callback();

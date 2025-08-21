@@ -110,10 +110,10 @@ boolean ESC::sendDShotPacket(uint16_t throttle) {
 
     items[16] = this->_dShotPause;
     
-    esp_err_t error1 = rmt_write_items(this->_channel1, items, 17, false);
-    esp_err_t error2 = rmt_write_items(this->_channel2, items, 17, false);
-    esp_err_t error3 = rmt_write_items(this->_channel3, items, 17, false);
-    esp_err_t error4 = rmt_write_items(this->_channel4, items, 17, false);
+    esp_err_t error1 = rmt_write_items(this->_channel1, items, 17, true);
+    esp_err_t error2 = rmt_write_items(this->_channel2, items, 17, true);
+    esp_err_t error3 = rmt_write_items(this->_channel3, items, 17, true);
+    esp_err_t error4 = rmt_write_items(this->_channel4, items, 17, true);
     
     if (error1 != ESP_OK || error2 != ESP_OK || error3 != ESP_OK || error4 != ESP_OK) {
         Serial.printf("RMT send error - CH1: %d, CH2: %d\n", error1, error2, error3, error4);
