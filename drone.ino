@@ -1,4 +1,3 @@
-
 #include "controller/controller.h"
 #include "controller/controller.cpp"
 #include "esc/esc.h"
@@ -7,42 +6,33 @@
 #include "mpu6050/mpu6050.cpp"
 #include "inlandOLED/inlandOLED.h"
 #include "inlandOLED/inlandOLED.cpp"
+#include "pid/pid.h"
+#include "pid/pid.cpp"
+#include "pid/filter.h"
+#include "pid/filter.cpp"
+#include "pid/mixer.h"
+#include "pid/mixer.cpp"
 
-//drone::Controller controller;
+MPU6050 mpu6050; //Default to GPIO 21 (SDA) and 22 (SCL)
 ESC esc(DSHOT::DSHOT300);
-// MPU6050 mpu6050; //Default to GPIO 21 (SDA) and 22 (SCL)
-// InlandOLED oled(27, 26, 32, 33, 25);
-// void draw(sensors_vec_t acceleration, sensors_vec_t gyro, float temperature) {
-//     oled.clearBuffer();
- 
-//     oled.setFont(FONT_SIZE_6);
-//     oled.drawStr(25, 10, "SENSOR READINGS");
-//     oled.drawLine(0, 14, 1024, 14);
+//Drone::Controller controller;
+                 
+double dt = 0;
+double base = 500;
+unsigned long lastTime = 0;
 
-//     oled.setFont(FONT_SIZE_4);
-//     char buffer[64];
-//     snprintf(buffer, sizeof(buffer), "Pos: X=%+5.2f Y=%+5.2f Z=%+5.2f", gyro.x, gyro.y, gyro.z);
-//     oled.drawStr(0, 28, buffer);
+PID rollPid(0, 0, 0);
+PID pitchPid(0, 0, 0);
+PID yawPid(0, 0, 0);
 
-//     snprintf(buffer, sizeof(buffer), "Acc: X=%+5.2f Y=%+5.2f Z=%+5.2f", acceleration.x, acceleration.y, acceleration.z);
-//     oled.drawStr(0, 40, buffer);
-
-//     snprintf(buffer, sizeof(buffer), "Temp: %.2f\xB0""C", temperature);
-//     oled.drawStr(0, 52, buffer); 
-
-  
-//     oled.sendBuffer();
-// }
+Filter filter;
+Mixer mixer;
 
 void setup(void) {
   Serial.begin(115200);
+
   //controller.setup();
-  
-//   mpu6050.setup();
-
-//   oled.setup();
-//   oled.flipScreen(true);
-
+  mpu6050.setup();
   esc.setup();
 }
 
@@ -54,11 +44,24 @@ void loop() {
     //         esc.sendDShotPacket(100);
     //     }
     // });
+    
 
-    esc.sendDShotPacket(1000);
-    // sensors_vec_t acceleration = mpu6050.getAcceleration();
-    // sensors_vec_t gyro = mpu6050.getGyro();
-    // float temperature = mpu6050.getTemperature();
+  unsigned long now = micros();
+  dt = (now - lastTime) / 1000000.0;
+  lastTime = now;
 
-    // draw(acceleration, gyro, temperature);
+  sensors_vec_t acceleration = mpu6050.getAcceleration();
+  sensors_vec_t gyro = mpu6050.getGyro();
+     
+  std::pair<double, double> pair = filter.nextAngle(gyro, acceleration, dt);
+  double roll = pair.first;
+  double pitch = pair.second;
+
+  double rollResult = rollPid.compute(0, roll, dt);
+  double pitchResult = pitchPid.compute(0, pitch, dt);
+  double yawResult = yawPid.compute(0, gyro.z, dt);
+
+  Motors motors = mixer.compute(base, rollResult, pitchResult, yawResult);
+  
+  esc.sendDShotPacket(motors.m1, motors.m2, motors.m3, motors.m4);
 }

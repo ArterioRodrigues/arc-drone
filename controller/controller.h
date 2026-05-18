@@ -7,7 +7,7 @@ ControllerPtr _controller;
 void onConnectedController(ControllerPtr controller);
 void onDisconnectedController(ControllerPtr controller);
 
-namespace drone {
+namespace Drone {
     class Controller {
         public:
             Controller();
