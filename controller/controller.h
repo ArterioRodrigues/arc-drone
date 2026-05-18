@@ -3,6 +3,9 @@
 #include <Bluepad32.h>
 
 typedef void (*Callback)(void);
+ControllerPtr _controller;
+void onConnectedController(ControllerPtr controller);
+void onDisconnectedController(ControllerPtr controller);
 
 namespace drone {
     class Controller {
@@ -11,9 +14,5 @@ namespace drone {
             void setup();
             ControllerPtr getController();
             void processController(Callback callback);
-        private:
-            ControllerPtr controller = nullptr;
-            void onConnectedController(BP32Controller* controller);
-            void onDisconnectedController(BP32Controller* controller);
     };
-}
+};
