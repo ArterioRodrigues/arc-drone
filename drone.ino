@@ -44,10 +44,7 @@ void loop() {
   sensors_vec_t acceleration = mpu6050.getAcceleration();
   sensors_vec_t gyro = mpu6050.getGyro();
 
-  Vec3 g = {gyro.x, gyro.y, gyro.z};
-  Vec3 a = {acceleration.x, acceleration.y, acceleration.z};
-
-  std::pair<double, double> pair = filter.nextAngle(g, a, dt);
+  std::pair<double, double> pair = filter.nextAngle(gyro, acceleration, dt);
   double roll = pair.first;
   double pitch = pair.second;
 
