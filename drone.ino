@@ -37,31 +37,29 @@ void setup(void) {
 }
 
 void loop() {
-
-    // controller.processController([]() {
-    //     ControllerPtr ctl = controller.getController();
-    //     if(ctl->isConnected() && ctl->hasData()) {
-    //         esc.sendDShotPacket(100);
-    //     }
-    // });
-    
-
   unsigned long now = micros();
   dt = (now - lastTime) / 1000000.0;
   lastTime = now;
 
   sensors_vec_t acceleration = mpu6050.getAcceleration();
   sensors_vec_t gyro = mpu6050.getGyro();
-     
-  std::pair<double, double> pair = filter.nextAngle(gyro, acceleration, dt);
+
+  Vec3 g = {gyro.x, gyro.y, gyro.z};
+  Vec3 a = {acceleration.x, acceleration.y, acceleration.z};
+
+  std::pair<double, double> pair = filter.nextAngle(g, a, dt);
   double roll = pair.first;
   double pitch = pair.second;
 
-  double rollResult = rollPid.compute(0, roll, dt);
+  double rollResult  = rollPid.compute(0, roll, dt);
   double pitchResult = pitchPid.compute(0, pitch, dt);
-  double yawResult = yawPid.compute(0, gyro.z, dt);
+  double yawResult   = yawPid.compute(0, gyro.z, dt);
 
   Motors motors = mixer.compute(base, rollResult, pitchResult, yawResult);
-  
+
+  Serial.printf("dt:%.4f  roll:%.2f  pitch:%.2f\n", dt, roll, pitch);
+  Serial.printf("PID  r:%.2f  p:%.2f  y:%.2f\n", rollResult, pitchResult, yawResult);
+  Serial.printf("MOT  m1:%d  m2:%d  m3:%d  m4:%d\n", motors.m1, motors.m2, motors.m3, motors.m4);
+
   esc.sendDShotPacket(motors.m1, motors.m2, motors.m3, motors.m4);
 }
