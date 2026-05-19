@@ -1,11 +1,9 @@
-#include "controller/controller.h"
-#include "controller/controller.cpp"
 #include "esc/esc.h"
 #include "esc/esc.cpp"
+#include "controller/controller.h"
+#include "controller/controller.cpp"
 #include "mpu6050/mpu6050.h"
 #include "mpu6050/mpu6050.cpp"
-#include "inlandOLED/inlandOLED.h"
-#include "inlandOLED/inlandOLED.cpp"
 #include "pid/pid.h"
 #include "pid/pid.cpp"
 #include "pid/filter.h"
@@ -13,50 +11,56 @@
 #include "pid/mixer.h"
 #include "pid/mixer.cpp"
 
+Drone::Controller controller;
 MPU6050 mpu6050; //Default to GPIO 21 (SDA) and 22 (SCL)
 ESC esc(DSHOT::DSHOT300);
-//Drone::Controller controller;
                  
 double dt = 0;
-double base = 500;
+double base = 100;
+double targetBase = 100;
 unsigned long lastTime = 0;
 
-PID rollPid(0, 0, 0);
-PID pitchPid(0, 0, 0);
+PID rollPid(200, 0.1, 10);
+PID pitchPid(200, 0.1, 10);
 PID yawPid(0, 0, 0);
 
 Filter filter;
 Mixer mixer;
 
+
 void setup(void) {
   Serial.begin(115200);
-
-  //controller.setup();
+  controller.setup();
   mpu6050.setup();
   esc.setup();
 }
 
 void loop() {
-  unsigned long now = micros();
-  dt = (now - lastTime) / 1000000.0;
-  lastTime = now;
+  controller.processController([]() {
+    ControllerPtr ctl = controller.getController();
+    if(!ctl->isConnected()|| !ctl->hasData() ) { return ;}
 
-  sensors_vec_t acceleration = mpu6050.getAcceleration();
-  sensors_vec_t gyro = mpu6050.getGyro();
+      int32_t leftY = ctl->axisY();
+      targetBase = map(-leftY, -512, 512, 100, 1000);
+      base += (targetBase - base) * 0.05;
+      
+      unsigned long now = micros();
+      dt = (now - lastTime) / 1000000.0;
+      lastTime = now;
 
-  std::pair<double, double> pair = filter.nextAngle(gyro, acceleration, dt);
-  double roll = pair.first;
-  double pitch = pair.second;
+      sensors_vec_t acceleration = mpu6050.getAcceleration();
+      sensors_vec_t gyro = mpu6050.getGyro();
 
-  double rollResult  = rollPid.compute(0, roll, dt);
-  double pitchResult = pitchPid.compute(0, pitch, dt);
-  double yawResult   = yawPid.compute(0, gyro.z, dt);
+      std::pair<double, double> pair = filter.nextAngle(gyro, acceleration, dt);
+      double roll = pair.first;
+      double pitch = pair.second;
 
-  Motors motors = mixer.compute(base, rollResult, pitchResult, yawResult);
+      double rollResult  = rollPid.compute(0, roll, dt);
+      double pitchResult = pitchPid.compute(0, pitch, dt);
+      double yawResult   = yawPid.compute(0, gyro.z, dt);
 
-  Serial.printf("dt:%.4f  roll:%.2f  pitch:%.2f\n", dt, roll, pitch);
-  Serial.printf("PID  r:%.2f  p:%.2f  y:%.2f\n", rollResult, pitchResult, yawResult);
-  Serial.printf("MOT  m1:%d  m2:%d  m3:%d  m4:%d\n", motors.m1, motors.m2, motors.m3, motors.m4);
-
-  esc.sendDShotPacket(motors.m1, motors.m2, motors.m3, motors.m4);
+      Motors motors = mixer.compute(base, rollResult, pitchResult, yawResult);
+      esc.sendDShotPacket(motors.m1, motors.m2, motors.m3, motors.m4);
+  });
 }
+
