@@ -10,7 +10,7 @@ void Drone::Controller::setup() {
 
     BP32.setup(&onConnectedController, &onDisconnectedController);
     BP32.forgetBluetoothKeys();
-    BP32.enableVirtualDevice(false);
+    BP32.enableNewBluetoothConnections(true);
 }
 void onConnectedController(ControllerPtr controller) { _controller = controller; }
 
@@ -19,8 +19,7 @@ void onDisconnectedController(ControllerPtr controller) { _controller = nullptr;
 ControllerPtr Drone::Controller::getController() { return _controller; }
 
 void Drone::Controller::processController(Callback callback) {
-    bool dataUpdated = BP32.update();
-    if (dataUpdated) {
-        callback();
-    }
+    BP32.update();
+    callback();
+    
 }
