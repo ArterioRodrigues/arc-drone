@@ -40,9 +40,12 @@ void loop() {
     ControllerPtr ctl = controller.getController();
     if(!ctl->isConnected()|| !ctl->hasData() ) { return ;}
 
-      int32_t leftY = ctl->axisY();
-      targetBase = map(-leftY, -512, 512, 100, 1000);
-      base += (targetBase - base) * 0.05;
+      //int32_t leftY = ctl->axisY();
+      //targetBase = map(-leftY, -512, 512, 100, 1000);
+      //base += (targetBase - base) * 0.05;
+      if(ctl->a()) base = constrain(base + 5, 100, 1000);  // X button
+      if(ctl->b()) base = constrain(base - 5, 100, 1000);
+     
       
       unsigned long now = micros();
       dt = (now - lastTime) / 1000000.0;
@@ -63,4 +66,5 @@ void loop() {
       esc.sendDShotPacket(motors.m1, motors.m2, motors.m3, motors.m4);
   });
 }
+
 
