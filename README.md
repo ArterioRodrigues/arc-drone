@@ -118,6 +118,26 @@ void loop() {
 Throttle trim is rate-limited rather than applied every loop pass; adjust
 `THROTTLE_STEP` and `THROTTLE_REPEAT_MS` in `arc-drone.ino` to taste.
 
+### Stabilization authority
+
+Angles from the complementary filter are in **radians**, so the PID gains are
+per-radian. Correction output is scaled by the throttle headroom actually
+available:
+
+```
+authority = (base - IDLE_BASE) / (HOVER_BASE - IDLE_BASE)   // clamped to 0..1
+```
+
+Roll and pitch stack additively in the mixer, so a single motor can see up to
+twice a PID's output limit. Without scaling, a small nudge above idle
+(`base = 103`) still permitted a full-scale correction, which pinned one motor on
+the mixer's 48 floor and drove the opposite one to ~1000 — a violent lurch rather
+than stabilization. Below `MIN_AUTHORITY` the loop holds the integrators cleared
+so bench time just above idle cannot wind up an offset.
+
+`HOVER_BASE` must roughly match the throttle your airframe actually hovers at,
+or the scaling will be wrong.
+
 The kill latch survives a controller dropout: once triggered, nothing spins again
 until the re-arm combo is pressed. While killed the sketch keeps sending
 zero-throttle DShot frames so the ESCs stay armed and respond instantly on re-arm.

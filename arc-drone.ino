@@ -17,6 +17,15 @@ ESC esc(DSHOT::DSHOT300);
                  
 double dt = 0;
 const double IDLE_BASE = 100;
+// Expected hover throttle. Correction authority is scaled against the headroom
+// between idle and this value, so it must roughly match reality.
+const double HOVER_BASE = 1400;
+const double MAX_BASE = 1600;
+// Below this fraction of hover headroom the airframe cannot respond to a
+// correction anyway, so stabilization stays off and the integrators are held
+// clear. Stops bench windup while sitting just above idle.
+const double MIN_AUTHORITY = 0.05;
+
 double base = IDLE_BASE;
 double targetBase = IDLE_BASE;
 unsigned long lastTime = 0;
@@ -32,9 +41,12 @@ unsigned long lastThrottleMs = 0;
 const unsigned long TELEMETRY_INTERVAL_MS = 200;
 unsigned long lastTelemetryMs = 0;
 
-PID rollPid(200, 0.1, 10);
-PID pitchPid(200, 0.1, 10);
-PID yawPid(0, 0, 0);
+// Angles are in radians, so these gains are per-radian. The last two arguments
+// cap the integral and the total output: roll and pitch stack additively in the
+// mixer, so the worst case on one motor is roughly twice the output limit.
+PID rollPid(200, 0.1, 10, 100, 300);
+PID pitchPid(200, 0.1, 10, 100, 300);
+PID yawPid(0, 0, 0, 100, 300);
 
 Filter filter;
 Mixer mixer;
@@ -97,10 +109,10 @@ void loop() {
       unsigned long nowMs = millis();
       if (nowMs - lastThrottleMs >= THROTTLE_REPEAT_MS) {
         if(ctl->a()) {  // Cross
-          base = constrain(base + THROTTLE_STEP, IDLE_BASE, 1000);
+          base = constrain(base + THROTTLE_STEP, IDLE_BASE, MAX_BASE);
           lastThrottleMs = nowMs;
         } else if(ctl->b()) {  // Circle
-          base = constrain(base - THROTTLE_STEP, IDLE_BASE, 1000);
+          base = constrain(base - THROTTLE_STEP, IDLE_BASE, MAX_BASE);
           lastThrottleMs = nowMs;
         }
       }
@@ -113,11 +125,13 @@ void loop() {
       // stops one late frame from dumping a giant step into the integrator.
       dt = constrain(dt, 0.0, 0.05);
 
-      if (base <= IDLE_BASE) {
-        rollPid.reset();
-        pitchPid.reset();
-        yawPid.reset();
-      }
+      // A correction is only meaningful if there is throttle headroom to apply
+      // it symmetrically. At base 103 there are 3 units above idle, so a full
+      // +-300 correction just pins one motor on the mixer's 48 floor and slams
+      // the opposite one to full - a violent jump, not stabilization. Scaling by
+      // headroom keeps the correction proportional to what the airframe can
+      // actually deliver.
+      double authority = constrain((base - IDLE_BASE) / (HOVER_BASE - IDLE_BASE), 0.0, 1.0);
 
       sensors_vec_t acceleration = mpu6050.getAcceleration();
       sensors_vec_t gyro = mpu6050.getGyro();
@@ -126,20 +140,31 @@ void loop() {
       double roll = pair.first;
       double pitch = pair.second;
 
-      double rollResult  = rollPid.compute(0, roll, dt);
-      double pitchResult = pitchPid.compute(0, pitch, dt);
-      double yawResult   = yawPid.compute(0, gyro.z, dt);
+      double rollResult = 0, pitchResult = 0, yawResult = 0;
+
+      if (authority < MIN_AUTHORITY) {
+        // Held on the bench just above idle the quad cannot level itself, so the
+        // integrators would wind to their limit and dump that offset into the
+        // motors the moment throttle came up.
+        rollPid.reset();
+        pitchPid.reset();
+        yawPid.reset();
+      } else {
+        rollResult  = rollPid.compute(0, roll, dt) * authority;
+        pitchResult = pitchPid.compute(0, pitch, dt) * authority;
+        yawResult   = yawPid.compute(0, gyro.z, dt) * authority;
+      }
 
       Motors motors = mixer.compute(base, rollResult, pitchResult, yawResult);
       esc.sendDShotPacket(motors.m1, motors.m2, motors.m3, motors.m4);
 
       if (nowMs - lastTelemetryMs >= TELEMETRY_INTERVAL_MS) {
         lastTelemetryMs = nowMs;
-        Serial.printf("base=%6.1f | roll=%7.2f pitch=%7.2f | gyro x=%7.2f y=%7.2f z=%7.2f"
+        Serial.printf("base=%6.1f auth=%.2f | roll=%7.2f pitch=%7.2f | gyro x=%7.2f y=%7.2f z=%7.2f"
                       " | accel x=%6.2f y=%6.2f z=%6.2f"
                       " | pid r=%7.1f p=%7.1f y=%7.1f"
                       " | m1=%4d m2=%4d m3=%4d m4=%4d | dt=%.4f\n",
-                      base, roll, pitch,
+                      base, authority, roll, pitch,
                       gyro.x, gyro.y, gyro.z,
                       acceleration.x, acceleration.y, acceleration.z,
                       rollResult, pitchResult, yawResult,
