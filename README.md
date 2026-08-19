@@ -110,14 +110,29 @@ void loop() {
 
 | Input | Action |
 |---|---|
-| Cross (X) | Throttle up (base +5, capped at 1000) |
-| Circle | Throttle down (base −5, floored at idle) |
+| Cross (X) | Throttle up — `base` +1 per 50 ms while held (capped at 1000) |
+| Circle | Throttle down — `base` −1 per 50 ms while held (floored at idle) |
 | **Triangle** | **Kill switch** — latches: motors are commanded to zero and PID state is cleared |
 | Square + L1 | Re-arm after a kill (two-button combo so a stray press can't restart the props) |
+
+Throttle trim is rate-limited rather than applied every loop pass; adjust
+`THROTTLE_STEP` and `THROTTLE_REPEAT_MS` in `arc-drone.ino` to taste.
 
 The kill latch survives a controller dropout: once triggered, nothing spins again
 until the re-arm combo is pressed. While killed the sketch keeps sending
 zero-throttle DShot frames so the ESCs stay armed and respond instantly on re-arm.
+
+### Serial telemetry
+
+At 115200 baud the sketch prints a line every 200 ms with the current base
+throttle, filtered roll/pitch, raw gyro and accelerometer vectors, PID outputs,
+the four commanded motor values, and the loop `dt`:
+
+```
+base= 118.0 | roll=  -1.24 pitch=   0.87 | gyro x=  -0.01 y=   0.02 z=   0.00 | accel x= -0.11 y=  0.980 z=  9.79 | pid r=  248.0 p= -174.0 y=    0.0 | m1= 192 m2=  48 m3=  48 m4= 240 | dt=0.0043
+```
+
+Kill and re-arm events are printed as they happen.
 
 ### Driver overview
 

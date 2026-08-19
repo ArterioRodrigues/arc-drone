@@ -21,6 +21,17 @@ double base = IDLE_BASE;
 double targetBase = IDLE_BASE;
 unsigned long lastTime = 0;
 
+// Throttle trim. The button handler runs every loop pass, so without a repeat
+// interval a held button ramps base at loop rate (hundreds of steps a second).
+// 1 unit per 50 ms gives a predictable 20 units/sec.
+const double THROTTLE_STEP = 1.0;
+const unsigned long THROTTLE_REPEAT_MS = 50;
+unsigned long lastThrottleMs = 0;
+
+// Serial is slow; printing every pass would stall the control loop.
+const unsigned long TELEMETRY_INTERVAL_MS = 200;
+unsigned long lastTelemetryMs = 0;
+
 PID rollPid(200, 0.1, 10);
 PID pitchPid(200, 0.1, 10);
 PID yawPid(0, 0, 0);
@@ -55,7 +66,10 @@ void loop() {
       return;
     }
 
-    if(ctl->y()) killed = true;  // Triangle
+    if(ctl->y() && !killed) {  // Triangle
+      killed = true;
+      Serial.println("KILLED - press Square + L1 to re-arm");
+    }
 
     if(killed) {
       // Hard stop: zero throttle straight to the ESCs, bypassing base/mixer so
@@ -70,15 +84,26 @@ void loop() {
 
       // Two-button combo to re-arm: a single stray press must not put the props
       // back to idle spin.
-      if(ctl->x() && (ctl->buttons() & BUTTON_SHOULDER_L)) killed = false;
+      if(ctl->x() && (ctl->buttons() & BUTTON_SHOULDER_L)) {
+        killed = false;
+        Serial.println("RE-ARMED");
+      }
       return;
     }
 
       //int32_t leftY = ctl->axisY();
       //targetBase = map(-leftY, -512, 512, 100, 1000);
       //base += (targetBase - base) * 0.05;
-      if(ctl->a()) base = constrain(base + 5, IDLE_BASE, 1000);  // X button
-      if(ctl->b()) base = constrain(base - 5, IDLE_BASE, 1000);
+      unsigned long nowMs = millis();
+      if (nowMs - lastThrottleMs >= THROTTLE_REPEAT_MS) {
+        if(ctl->a()) {  // Cross
+          base = constrain(base + THROTTLE_STEP, IDLE_BASE, 1000);
+          lastThrottleMs = nowMs;
+        } else if(ctl->b()) {  // Circle
+          base = constrain(base - THROTTLE_STEP, IDLE_BASE, 1000);
+          lastThrottleMs = nowMs;
+        }
+      }
      
       
       unsigned long now = micros();
@@ -107,6 +132,19 @@ void loop() {
 
       Motors motors = mixer.compute(base, rollResult, pitchResult, yawResult);
       esc.sendDShotPacket(motors.m1, motors.m2, motors.m3, motors.m4);
+
+      if (nowMs - lastTelemetryMs >= TELEMETRY_INTERVAL_MS) {
+        lastTelemetryMs = nowMs;
+        Serial.printf("base=%6.1f | roll=%7.2f pitch=%7.2f | gyro x=%7.2f y=%7.2f z=%7.2f"
+                      " | accel x=%6.2f y=%6.2f z=%6.2f"
+                      " | pid r=%7.1f p=%7.1f y=%7.1f"
+                      " | m1=%4d m2=%4d m3=%4d m4=%4d | dt=%.4f\n",
+                      base, roll, pitch,
+                      gyro.x, gyro.y, gyro.z,
+                      acceleration.x, acceleration.y, acceleration.z,
+                      rollResult, pitchResult, yawResult,
+                      motors.m1, motors.m2, motors.m3, motors.m4, dt);
+      }
   });
 }
 
