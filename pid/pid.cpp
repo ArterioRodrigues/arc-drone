@@ -1,5 +1,4 @@
 #include "pid.h"
-#include <algorithm>
 
 PID::PID(double Kp, double Ki, double Kd, double iLimit, double outputLimit) {
   this->_Kp = Kp;
@@ -27,7 +26,7 @@ double PID::compute(double setpoint, double measure, double dt) {
   double error = setpoint - measure;
   double p = _Kp * error;
 
-  _Iterm = std::clamp(_Iterm + _Ki * error * dt, -_iLimit, _iLimit);
+  _Iterm = clamp(_Iterm + _Ki * error * dt, -_iLimit, _iLimit);
 
   // Derivative on the measurement, not on the error: a setpoint step would
   // otherwise produce a derivative kick straight into the motors.
@@ -38,6 +37,6 @@ double PID::compute(double setpoint, double measure, double dt) {
   _previousMeasure = measure;
   _hasPreviousMeasure = true;
 
-  _lastOutput = std::clamp(p + _Iterm + d, -_outputLimit, _outputLimit);
+  _lastOutput = clamp(p + _Iterm + d, -_outputLimit, _outputLimit);
   return _lastOutput;
 }
