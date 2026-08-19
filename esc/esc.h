@@ -28,6 +28,13 @@
 
 #define NEUTRAL_THROTTLE 0
 
+// One DShot frame period per protocol, also used as the keep-alive interval
+#define DSHOT600_FRAME_US 2000
+#define DSHOT300_FRAME_US 4000
+
+// Number of neutral frames sent to bring the ESCs into the armed state
+#define ARM_FRAME_COUNT 200
+
 enum DSHOT {
     DSHOT600 = 0,
     DSHOT300 = 1,
@@ -39,6 +46,8 @@ class ESC {
         gpio_num_t motorPin3 = MOTOR_PIN_3, gpio_num_t motorPin4 = MOTOR_PIN_4, rmt_channel_t channel1 = RMT_CH_1,
         rmt_channel_t channel2 = RMT_CH_2, rmt_channel_t channel3 = RMT_CH_3, rmt_channel_t channel4 = RMT_CH_4);
     void setup();
+    void arm();
+    void keepAlive();
     boolean sendDShotPacket(uint16_t throttle);
     boolean sendDShotPacket(uint16_t throttle1, uint16_t throttle2, uint16_t throttle3, uint16_t throttle4);
     void dumpPacketBinary(uint16_t packet, uint16_t throttle);
@@ -59,4 +68,6 @@ class ESC {
     rmt_channel_t _channel4;
 
     DSHOT _dshot;
+    unsigned long _frameIntervalUs;
+    unsigned long _lastPacketUs;
 };

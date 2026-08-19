@@ -35,6 +35,7 @@ ESC::ESC(DSHOT dshot, gpio_num_t motorPin1, gpio_num_t motorPin2, gpio_num_t mot
     this->_dshot = dshot;
     switch (dshot) {
     case DSHOT::DSHOT600:
+        this->_frameIntervalUs = DSHOT600_FRAME_US;
         this->_dShotBit0.level0 = 1;
         this->_dShotBit0.duration0 = T0H;
         this->_dShotBit0.level1 = 0;
@@ -46,6 +47,7 @@ ESC::ESC(DSHOT dshot, gpio_num_t motorPin1, gpio_num_t motorPin2, gpio_num_t mot
         this->_dShotBit1.duration1 = T1L;
         break;
     case DSHOT::DSHOT300:
+        this->_frameIntervalUs = DSHOT300_FRAME_US;
         this->_dShotBit0.level0 = 1;
         this->_dShotBit0.duration0 = T0H * 2;
         this->_dShotBit0.level1 = 0;
@@ -62,6 +64,8 @@ ESC::ESC(DSHOT dshot, gpio_num_t motorPin1, gpio_num_t motorPin2, gpio_num_t mot
     this->_dShotPause.duration0 = 2000;
     this->_dShotPause.level1 = 0;
     this->_dShotPause.duration1 = 0;
+
+    this->_lastPacketUs = 0;
 }
 void ESC::setup() {
     Serial.println("Initializing DShot with default pins and channels...");
@@ -73,21 +77,29 @@ void ESC::setup() {
     rmtSetup(this->_motorPin4, this->_channel4);
 
     delay(3000);
+    this->arm();
+}
+
+void ESC::arm() {
     Serial.println("Arming ESC...");
 
-    for (int i = 0; i < 200; i++) {
+    for (int i = 0; i < ARM_FRAME_COUNT; i++) {
         this->sendDShotPacket(NEUTRAL_THROTTLE);
-        switch (this->_dshot) {
-        case DSHOT::DSHOT600:
-            delayMicroseconds(2000);
-            break;
-        case DSHOT::DSHOT300:
-            delayMicroseconds(4000);
-            break;
-        }
+        delayMicroseconds(this->_frameIntervalUs);
     }
 
     Serial.println("ESC Armed!");
+}
+
+// ESCs disarm if they stop seeing frames, so send a neutral packet whenever the
+// flight loop has not produced one within a frame period (e.g. while waiting for
+// the controller to connect). Cheap enough to call every loop iteration.
+void ESC::keepAlive() {
+    if (micros() - this->_lastPacketUs < this->_frameIntervalUs) {
+        return;
+    }
+
+    this->sendDShotPacket(NEUTRAL_THROTTLE);
 }
 boolean ESC::sendDShotPacket(uint16_t throttle) {
     uint16_t packet = (throttle << 1);
@@ -105,6 +117,8 @@ boolean ESC::sendDShotPacket(uint16_t throttle) {
     }
 
     items[16] = this->_dShotPause;
+
+    this->_lastPacketUs = micros();
 
     esp_err_t error1 = rmt_write_items(this->_channel1, items, 17, true);
     esp_err_t error2 = rmt_write_items(this->_channel2, items, 17, true);
@@ -141,6 +155,8 @@ boolean ESC::sendDShotPacket(uint16_t throttle1, uint16_t throttle2, uint16_t th
         }
         items[m][16] = this->_dShotPause;
     }
+
+    this->_lastPacketUs = micros();
 
     esp_err_t error1 = rmt_write_items(this->_channel1, items[0], 17, true);
     esp_err_t error2 = rmt_write_items(this->_channel2, items[1], 17, true);
