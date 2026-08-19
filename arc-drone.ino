@@ -28,6 +28,10 @@ PID yawPid(0, 0, 0);
 Filter filter;
 Mixer mixer;
 
+// Latched by Triangle. Survives a controller dropout on purpose: once killed,
+// nothing spins again until the pilot re-arms with the combo below.
+bool killed = false;
+
 
 void setup(void) {
   Serial.begin(115200);
@@ -48,6 +52,25 @@ void loop() {
       // Stale timestamp would otherwise produce a bogus dt on the first frame
       // after the controller shows up.
       lastTime = micros();
+      return;
+    }
+
+    if(ctl->y()) killed = true;  // Triangle
+
+    if(killed) {
+      // Hard stop: zero throttle straight to the ESCs, bypassing base/mixer so
+      // no PID output can leak through. Still a real DShot frame every loop, so
+      // the ESCs stay armed and responsive for the re-arm.
+      esc.sendDShotPacket(0, 0, 0, 0);
+      base = IDLE_BASE;
+      rollPid.reset();
+      pitchPid.reset();
+      yawPid.reset();
+      lastTime = micros();
+
+      // Two-button combo to re-arm: a single stray press must not put the props
+      // back to idle spin.
+      if(ctl->x() && (ctl->buttons() & BUTTON_SHOULDER_L)) killed = false;
       return;
     }
 

@@ -106,6 +106,19 @@ void loop() {
 }
 ```
 
+### Flight controls (PS4 layout)
+
+| Input | Action |
+|---|---|
+| Cross (X) | Throttle up (base +5, capped at 1000) |
+| Circle | Throttle down (base −5, floored at idle) |
+| **Triangle** | **Kill switch** — latches: motors are commanded to zero and PID state is cleared |
+| Square + L1 | Re-arm after a kill (two-button combo so a stray press can't restart the props) |
+
+The kill latch survives a controller dropout: once triggered, nothing spins again
+until the re-arm combo is pressed. While killed the sketch keeps sending
+zero-throttle DShot frames so the ESCs stay armed and respond instantly on re-arm.
+
 ### Driver overview
 
 #### ESC (`esc/`)
