@@ -20,6 +20,11 @@ public:
   // re-armed, otherwise the integrator keeps winding up while on the ground.
   void reset();
 
+  // Clears only the accumulated integral. Unlike reset() this keeps the
+  // derivative history, so it can be called every pass while grounded without
+  // destroying the D term.
+  void resetIntegral();
+
 private:
   double _Kp;
   double _Ki;

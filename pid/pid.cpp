@@ -18,6 +18,10 @@ void PID::reset() {
   this->_hasPreviousMeasure = false;
 }
 
+void PID::resetIntegral() {
+  this->_Iterm = 0;
+}
+
 double PID::compute(double setpoint, double measure, double dt) {
   // Two loop passes inside the same microsecond give dt == 0; the comparison
   // also rejects NaN so a bad dt can never poison the output with inf/NaN.

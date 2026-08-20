@@ -114,6 +114,7 @@ void loop() {
 | Circle | Throttle down — `base` −1 per 50 ms while held (floored at idle) |
 | **Triangle** | **Kill switch** — latches: motors are commanded to zero and PID state is cleared |
 | Square + L1 | Re-arm after a kill (two-button combo so a stray press can't restart the props) |
+| D-pad Up | Toggle bench mode — forces full correction authority so the loop can be verified at low throttle. **Props off.** |
 
 Throttle trim is rate-limited rather than applied every loop pass; adjust
 `THROTTLE_STEP` and `THROTTLE_REPEAT_MS` in `arc-drone.ino` to taste.
@@ -136,7 +137,29 @@ than stabilization. Below `MIN_AUTHORITY` the loop holds the integrators cleared
 so bench time just above idle cannot wind up an offset.
 
 `HOVER_BASE` must roughly match the throttle your airframe actually hovers at,
-or the scaling will be wrong.
+or the scaling will be wrong. Authority never falls to zero — it is floored at
+`MIN_AUTHORITY` so the loop always shows some response — and below `GROUND_BASE`
+only the integrator is held clear, leaving P and D live so tilting the frame on
+the bench still moves the motors.
+
+### Motor layout and mixing
+
+Viewed from above:
+
+```
+  m1 front-left      m2 front-right
+  m3 back-left       m4 back-right
+```
+
+Roll splits left (m1/m3) from right (m2/m4), pitch splits front (m1/m2) from
+back (m3/m4), and yaw splits the two diagonals.
+
+The mixer never clamps motors individually. Attitude is set by the *differences*
+between motors, so clipping one at the 48 floor would flatten the differential
+and the quad would stop responding precisely when it most needs to. Instead the
+whole correction set is scaled down to fit the headroom above and below the
+current throttle, preserving the ratios. Base throttle is never shifted up to
+make room, since motors spooling up unasked is dangerous in the hand.
 
 The kill latch survives a controller dropout: once triggered, nothing spins again
 until the re-arm combo is pressed. While killed the sketch keeps sending

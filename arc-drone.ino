@@ -21,10 +21,14 @@ const double IDLE_BASE = 100;
 // between idle and this value, so it must roughly match reality.
 const double HOVER_BASE = 1400;
 const double MAX_BASE = 1600;
-// Below this fraction of hover headroom the airframe cannot respond to a
-// correction anyway, so stabilization stays off and the integrators are held
-// clear. Stops bench windup while sitting just above idle.
+// Correction authority never drops to zero, or the quad would stop responding
+// entirely at bench throttle and there would be no way to verify the loop. This
+// is the floor applied to the headroom scaling.
 const double MIN_AUTHORITY = 0.05;
+
+// Below this the quad is clearly on the ground, so the integrator is held clear
+// to stop it winding up against a surface it cannot level itself off.
+const double GROUND_BASE = 300;
 
 double base = IDLE_BASE;
 double targetBase = IDLE_BASE;
@@ -54,6 +58,12 @@ Mixer mixer;
 // Latched by Triangle. Survives a controller dropout on purpose: once killed,
 // nothing spins again until the pilot re-arms with the combo below.
 bool killed = false;
+
+// Forces full correction authority regardless of throttle so the loop can be
+// verified on the bench, where throttle is too low for a visible response.
+// PROPS OFF.
+bool benchMode = false;
+bool lastDpadUp = false;
 
 
 void setup(void) {
@@ -107,6 +117,15 @@ void loop() {
       //targetBase = map(-leftY, -512, 512, 100, 1000);
       //base += (targetBase - base) * 0.05;
       unsigned long nowMs = millis();
+
+      // Edge-detected: holding the pad would otherwise toggle every loop pass.
+      bool dpadUp = ctl->dpad() & DPAD_UP;
+      if (dpadUp && !lastDpadUp) {
+        benchMode = !benchMode;
+        Serial.printf("BENCH MODE %s - props off!\n", benchMode ? "ON" : "OFF");
+      }
+      lastDpadUp = dpadUp;
+
       if (nowMs - lastThrottleMs >= THROTTLE_REPEAT_MS) {
         if(ctl->a()) {  // Cross
           base = constrain(base + THROTTLE_STEP, IDLE_BASE, MAX_BASE);
@@ -130,8 +149,10 @@ void loop() {
       // +-300 correction just pins one motor on the mixer's 48 floor and slams
       // the opposite one to full - a violent jump, not stabilization. Scaling by
       // headroom keeps the correction proportional to what the airframe can
-      // actually deliver.
-      double authority = constrain((base - IDLE_BASE) / (HOVER_BASE - IDLE_BASE), 0.0, 1.0);
+      // actually deliver, while the floor keeps a visible response on the bench.
+      double authority = constrain((base - IDLE_BASE) / (HOVER_BASE - IDLE_BASE),
+                                   MIN_AUTHORITY, 1.0);
+      if (benchMode) { authority = 1.0; }
 
       sensors_vec_t acceleration = mpu6050.getAcceleration();
       sensors_vec_t gyro = mpu6050.getGyro();
@@ -140,31 +161,30 @@ void loop() {
       double roll = pair.first;
       double pitch = pair.second;
 
-      double rollResult = 0, pitchResult = 0, yawResult = 0;
-
-      if (authority < MIN_AUTHORITY) {
-        // Held on the bench just above idle the quad cannot level itself, so the
-        // integrators would wind to their limit and dump that offset into the
-        // motors the moment throttle came up.
-        rollPid.reset();
-        pitchPid.reset();
-        yawPid.reset();
-      } else {
-        rollResult  = rollPid.compute(0, roll, dt) * authority;
-        pitchResult = pitchPid.compute(0, pitch, dt) * authority;
-        yawResult   = yawPid.compute(0, gyro.z, dt) * authority;
+      if (base <= GROUND_BASE) {
+        // Sitting on the bench the quad cannot level itself, so the integrators
+        // would wind to their limit and dump that offset into the motors the
+        // moment throttle came up. P and D still run, so tilting the frame gives
+        // an immediate, visible response.
+        rollPid.resetIntegral();
+        pitchPid.resetIntegral();
+        yawPid.resetIntegral();
       }
+
+      double rollResult  = rollPid.compute(0, roll, dt) * authority;
+      double pitchResult = pitchPid.compute(0, pitch, dt) * authority;
+      double yawResult   = yawPid.compute(0, gyro.z, dt) * authority;
 
       Motors motors = mixer.compute(base, rollResult, pitchResult, yawResult);
       esc.sendDShotPacket(motors.m1, motors.m2, motors.m3, motors.m4);
 
       if (nowMs - lastTelemetryMs >= TELEMETRY_INTERVAL_MS) {
         lastTelemetryMs = nowMs;
-        Serial.printf("base=%6.1f auth=%.2f | roll=%7.2f pitch=%7.2f | gyro x=%7.2f y=%7.2f z=%7.2f"
+        Serial.printf("base=%6.1f auth=%.2f%s | roll=%7.2f pitch=%7.2f | gyro x=%7.2f y=%7.2f z=%7.2f"
                       " | accel x=%6.2f y=%6.2f z=%6.2f"
                       " | pid r=%7.1f p=%7.1f y=%7.1f"
                       " | m1=%4d m2=%4d m3=%4d m4=%4d | dt=%.4f\n",
-                      base, authority, roll, pitch,
+                      base, authority, benchMode ? " BENCH" : "", roll, pitch,
                       gyro.x, gyro.y, gyro.z,
                       acceleration.x, acceleration.y, acceleration.z,
                       rollResult, pitchResult, yawResult,
