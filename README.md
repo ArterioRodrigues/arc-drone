@@ -225,6 +225,38 @@ on the ground — long enough to saturate at `iLimit` and dump a full-scale
 correction into the motors the instant it got light. Retune it if hover throttle
 changes.
 
+### Yaw and prop directions
+
+Yaw is a **rate** controller, not an angle controller. `compute()` is fed
+`gyro.z` directly as the measurement, so `Kp` acts as rate damping — it resists
+rotation rather than holding a heading. `Ki` stays `0`: there is no magnetometer,
+so there is no absolute heading to hold and an integrator would wind up against a
+reference that does not exist.
+
+Yaw was previously unstabilised (`PID yawPid(0, 0, 0, ...)` — every gain zero, so
+the yaw output was always exactly `0`). Nothing opposed rotation about the
+vertical axis, while roll and pitch corrections actively induce it: motor torque
+scales with speed, so an asymmetric mix twists the frame. The result is a craft
+that yaws, keeps yawing, and spins in.
+
+Yaw control only works if the props are arranged correctly. The mixer pairs them
+diagonally — `m1`/`m4` take `+yaw`, `m2`/`m3` take `-yaw`:
+
+```
+   m1 (CW)  ────  m2 (CCW)
+      │   \    /   │
+      │     ><     │
+      │   /    \   │
+   m3 (CCW) ────  m4 (CW)
+```
+
+* `m1` and `m4` spin one direction; `m2` and `m3` spin the other.
+* Each prop must match its motor — a CW motor needs a CW prop.
+
+If a diagonal pair does not match, the frame has a permanent net torque and will
+spin regardless of gains. **No amount of tuning fixes wrong prop directions**;
+check this before touching `Kp`.
+
 ### Throttle and hover
 
 `HOVER_BASE` is the throttle the airframe hovers at, and `GROUND_BASE` derives
@@ -236,6 +268,13 @@ above real hover, so the integrator never switches on and the drift it exists to
 remove stays. Too low only widens the ground window, and a craft sitting on flat
 ground that was calibrated on that same ground reports near-zero error, so it
 integrates almost nothing. Do not take off from a slope.
+
+`Ki` on roll and pitch is currently staged at `0`. It exists to trim out steady
+drift, but drift is tolerable and instability is not, so it stays out of the loop
+until the craft holds a clean hover. Raise it to `50` once hover is stable and
+the only remaining complaint is a slow lean. Until then the loop cannot null a
+steady disturbance — P always stops short, so it settles wherever it balances the
+disturbance and holds a small bank. That lean is expected, not a fault.
 
 **Measuring hover throttle without a serial cable:** the throttle trim is a known
 ramp — `THROTTLE_STEP` per `THROTTLE_REPEAT_MS`, currently 20 units/sec from

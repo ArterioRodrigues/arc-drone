@@ -95,20 +95,30 @@ unsigned long lastTelemetryMs = 0;
 // but that turned out to be a sign problem, not a gain problem. Back to the
 // known-good number - tune from here, one change at a time.
 //
-// Ki was 0.1, which with error in radians accumulated so slowly it never reached
-// a usable value in a whole flight - the integral term was doing nothing at all.
-// P alone always stops short: as the error shrinks so does the push, so it
-// settles wherever it balances a steady disturbance (CG offset, motor or prop
-// mismatch) and holds that bank, which is what made the craft slide steadily in
-// one direction. Ki 50 gives an integral time of Kp/Ki = 4s. Raising it much
-// further destabilises rather than trimming faster.
+// Ki is staged at 0 on purpose. It exists to trim out steady drift, but drift is
+// acceptable for now and stability is not - so it stays out of the loop until
+// the craft holds a clean hover. Raise it to 50 (integral time Kp/Ki = 4s) once
+// hover is stable and the only remaining complaint is a slow lean.
 //
-// iLimit is 50, down from 100. The trim actually needed measures around 10-25
-// units, so 50 is ample authority while halving what a mis-set GROUND_BASE could
-// dump into the motors at liftoff.
-PID rollPid(200, 50, 10, 50, 300);
-PID pitchPid(200, 50, 10, 50, 300);
-PID yawPid(0, 0, 0, 100, 300);
+// For the record: at Ki 0 the loop cannot null a steady disturbance. P always
+// stops short, because as the error shrinks so does the push, so it settles
+// wherever it balances the disturbance and holds that small bank. That is
+// expected, and it is the drift being tolerated for now.
+PID rollPid(200, 0, 10, 50, 300);
+PID pitchPid(200, 0, 10, 50, 300);
+
+// Yaw is a RATE controller, not an angle controller: compute() is fed gyro.z
+// directly as the measurement, so Kp here acts as rate damping - it resists
+// rotation rather than holding a heading.
+//
+// It was 0, meaning yaw was completely unstabilised. Nothing opposed rotation
+// about the vertical axis, while roll and pitch corrections actively induce it:
+// motor torque scales with speed, so an asymmetric mix twists the frame. The
+// craft yaws, keeps yawing, and spins in.
+//
+// Ki stays 0. There is no magnetometer, so there is no absolute heading to hold,
+// and an integrator would wind up against a reference that does not exist.
+PID yawPid(50, 0, 0, 50, 300);
 
 Filter filter;
 Mixer mixer;
