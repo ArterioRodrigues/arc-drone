@@ -122,9 +122,15 @@ Throttle trim is rate-limited rather than applied every loop pass; adjust
 ### Stabilization authority
 
 Angles from the complementary filter are in **radians**, so the PID gains are
-per-radian. `Kp = 300` means a 20° (0.35 rad) tilt asks for roughly ±105 of
-motor differential — at `base = 500` that gives `395 / 605 / 395 / 605`. Raise it
-if the quad feels sluggish, lower it if it starts to oscillate.
+per-radian. `Kp = 200` is the value the airframe last flew with. It was briefly
+raised to 300 while chasing a weak response, but that turned out to be a sign
+problem rather than a gain problem, so it is back to the known-good number.
+Tune from here, one change at a time.
+
+The derivative term is fed the raw gyro rate rather than a numerical derivative
+of the filtered angle. Differentiating the filtered angle amplifies sensor noise
+and inherits the complementary filter's lag, and both weaken damping — which
+shows up as oscillation.
 
 Correction strength ramps in over `IDLE_BASE → FULL_AUTHORITY_BASE` and is full
 above that:
@@ -154,6 +160,16 @@ Viewed from above:
 
 Roll splits left (m1/m3) from right (m2/m4), pitch splits front (m1/m2) from
 back (m3/m4), and yaw splits the two diagonals.
+
+To correct a tilt the **low side** needs more thrust. The complementary filter
+reports roll positive for right-side-down and pitch positive for nose-down, and
+the PID computes `error = 0 - angle`, so its output is already negative for a
+positive tilt — which means the low side is the one with the correction
+*subtracted*. Getting this backwards turns the loop into positive feedback: the
+craft drives itself further into the tilt and oscillates instead of levelling.
+
+Verify on the bench (props off, D-pad Up for bench mode) before every flight
+after touching wiring: tilt right, and `m2`/`m4` must rise.
 
 The mixer never clamps motors individually. Attitude is set by the *differences*
 between motors, so clipping one at the 48 floor would flatten the differential

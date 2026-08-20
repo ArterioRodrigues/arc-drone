@@ -50,13 +50,12 @@ unsigned long lastThrottleMs = 0;
 const unsigned long TELEMETRY_INTERVAL_MS = 200;
 unsigned long lastTelemetryMs = 0;
 
-// Angles are in radians, so these gains are per-radian. Kp 300 means a 20 degree
-// (0.35 rad) tilt asks for roughly +-105 of motor differential; scale it if the
-// quad feels sluggish or starts to oscillate. The last two arguments cap the
-// integral and the total output: roll and pitch stack additively in the mixer,
-// so the worst case on one motor is roughly twice the output limit.
-PID rollPid(300, 0.1, 10, 100, 300);
-PID pitchPid(300, 0.1, 10, 100, 300);
+// Angles are in radians, so these gains are per-radian. Kp 200 is the value the
+// airframe last flew with; it was raised to 300 while chasing a weak response,
+// but that turned out to be a sign problem, not a gain problem. Back to the
+// known-good number - tune from here, one change at a time.
+PID rollPid(200, 0.1, 10, 100, 300);
+PID pitchPid(200, 0.1, 10, 100, 300);
 PID yawPid(0, 0, 0, 100, 300);
 
 Filter filter;
@@ -176,8 +175,12 @@ void loop() {
         yawPid.resetIntegral();
       }
 
-      double rollResult  = rollPid.compute(0, roll, dt) * authority;
-      double pitchResult = pitchPid.compute(0, pitch, dt) * authority;
+      // Feed the gyro straight in as the derivative term. Differentiating the
+      // filtered angle instead amplifies sensor noise and inherits the
+      // complementary filter's lag, both of which weaken damping - and weak
+      // damping is what shows up as oscillation.
+      double rollResult  = rollPid.compute(0, roll, gyro.x, dt) * authority;
+      double pitchResult = pitchPid.compute(0, pitch, gyro.y, dt) * authority;
       double yawResult   = yawPid.compute(0, gyro.z, dt) * authority;
 
       Motors motors = mixer.compute(base, rollResult, pitchResult, yawResult);

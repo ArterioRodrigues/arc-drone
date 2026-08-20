@@ -16,6 +16,12 @@ public:
 
   double compute(double setpoint, double measure, double dt);
 
+  // Preferred form. Takes the measured rate of change (e.g. the gyro reading)
+  // instead of differentiating the measurement, which avoids amplifying sensor
+  // noise and avoids the lag the complementary filter adds. Both hurt damping,
+  // and poor damping is what shows up as oscillation.
+  double compute(double setpoint, double measure, double measureRate, double dt);
+
   // Clears the integral/derivative state. Call whenever the motors are idle or
   // re-armed, otherwise the integrator keeps winding up while on the ground.
   void reset();
@@ -26,6 +32,9 @@ public:
   void resetIntegral();
 
 private:
+  double computeWithRate(double setpoint, double measure, double measureRate,
+                         double dt);
+
   double _Kp;
   double _Ki;
   double _Kd;

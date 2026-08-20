@@ -27,19 +27,35 @@ double PID::compute(double setpoint, double measure, double dt) {
   // also rejects NaN so a bad dt can never poison the output with inf/NaN.
   if (!(dt > 0.0)) { return _lastOutput; }
 
+  // Derivative on the measurement, not on the error: a setpoint step would
+  // otherwise produce a derivative kick straight into the motors.
+  double rate = 0.0;
+  if (_hasPreviousMeasure) {
+    rate = (measure - _previousMeasure) / dt;
+  }
+  _previousMeasure = measure;
+  _hasPreviousMeasure = true;
+
+  return computeWithRate(setpoint, measure, rate, dt);
+}
+
+double PID::compute(double setpoint, double measure, double measureRate, double dt) {
+  if (!(dt > 0.0)) { return _lastOutput; }
+
+  _previousMeasure = measure;
+  _hasPreviousMeasure = true;
+
+  return computeWithRate(setpoint, measure, measureRate, dt);
+}
+
+double PID::computeWithRate(double setpoint, double measure, double measureRate,
+                            double dt) {
   double error = setpoint - measure;
   double p = _Kp * error;
 
   _Iterm = clamp(_Iterm + _Ki * error * dt, -_iLimit, _iLimit);
 
-  // Derivative on the measurement, not on the error: a setpoint step would
-  // otherwise produce a derivative kick straight into the motors.
-  double d = 0.0;
-  if (_hasPreviousMeasure) {
-    d = -_Kd * (measure - _previousMeasure) / dt;
-  }
-  _previousMeasure = measure;
-  _hasPreviousMeasure = true;
+  double d = -_Kd * measureRate;
 
   _lastOutput = clamp(p + _Iterm + d, -_outputLimit, _outputLimit);
   return _lastOutput;

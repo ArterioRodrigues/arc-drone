@@ -5,14 +5,21 @@
 // Motor layout, viewed from above:
 //   m1 front-left    m2 front-right
 //   m3 back-left     m4 back-right
-// Roll splits left (m1/m3) from right (m2/m4), pitch splits front (m1/m2) from
-// back (m3/m4), and yaw splits the two diagonals.
+//
+// Sign convention, derived from the complementary filter's angle convention
+// (roll positive = right side down, pitch positive = nose down): to correct a
+// tilt the LOW side needs more thrust. The PID computes error = 0 - angle, so
+// its output is already negative for a positive tilt, which means the low side
+// must be the one with the correction subtracted.
+//
+// Getting this backwards turns the loop into positive feedback: the craft
+// drives itself further into the tilt and oscillates rather than levelling.
 Motors Mixer::compute(double base, double roll, double pitch, double yaw) {
     double correction[4] = {
-        -roll + pitch + yaw,  // m1
-        +roll + pitch - yaw,  // m2
-        -roll - pitch - yaw,  // m3
-        +roll - pitch + yaw,  // m4
+        +roll - pitch + yaw,  // m1 front-left
+        -roll - pitch - yaw,  // m2 front-right
+        +roll + pitch - yaw,  // m3 back-left
+        -roll + pitch + yaw,  // m4 back-right
     };
 
     double lowest = correction[0];
