@@ -87,23 +87,70 @@ void MPU6050::setup() {
     this->_mpu.getEvent(&this->_acceleration, &this->_gyro, &this->_temperature);
 }
 
-MPU6050::MPU6050(){}
+MPU6050::MPU6050(){
+    this->_gyroBias.x = 0;
+    this->_gyroBias.y = 0;
+    this->_gyroBias.z = 0;
+}
 
 MPU6050::MPU6050(int sdaPin, int sclPin) {
     Wire.begin(sdaPin, sclPin);
+    this->_gyroBias.x = 0;
+    this->_gyroBias.y = 0;
+    this->_gyroBias.z = 0;
     Serial.println("Initializing MPU6050 with custom SDA and SCL pins...");
 }
 
-sensors_vec_t MPU6050::getAcceleration() {
+void MPU6050::read() {
     this->_mpu.getEvent(&_acceleration, &_gyro, &_temperature);
+}
+
+sensors_vec_t MPU6050::lastAcceleration() { return this->_acceleration.acceleration; }
+
+sensors_vec_t MPU6050::lastGyro() {
+    sensors_vec_t gyro = this->_gyro.gyro;
+    gyro.x -= this->_gyroBias.x;
+    gyro.y -= this->_gyroBias.y;
+    gyro.z -= this->_gyroBias.z;
+    return gyro;
+}
+
+void MPU6050::calibrateGyro(uint16_t samples) {
+    Serial.println("Calibrating gyro - hold the craft still and level...");
+
+    this->_gyroBias.x = 0;
+    this->_gyroBias.y = 0;
+    this->_gyroBias.z = 0;
+
+    double sumX = 0, sumY = 0, sumZ = 0;
+    for (uint16_t i = 0; i < samples; i++) {
+        this->read();
+        sumX += this->_gyro.gyro.x;
+        sumY += this->_gyro.gyro.y;
+        sumZ += this->_gyro.gyro.z;
+        delay(2);
+    }
+
+    this->_gyroBias.x = sumX / samples;
+    this->_gyroBias.y = sumY / samples;
+    this->_gyroBias.z = sumZ / samples;
+
+    Serial.printf("Gyro bias: x=%.4f y=%.4f z=%.4f rad/s\n", this->_gyroBias.x,
+                  this->_gyroBias.y, this->_gyroBias.z);
+}
+
+sensors_vec_t MPU6050::getGyroBias() { return this->_gyroBias; }
+
+sensors_vec_t MPU6050::getAcceleration() {
+    this->read();
     return this->_acceleration.acceleration;
 }
 sensors_vec_t MPU6050::getGyro() {
-    this->_mpu.getEvent(&_acceleration, &_gyro, &_temperature);
-    return this->_gyro.gyro;
+    this->read();
+    return this->lastGyro();
 }
 float MPU6050::getTemperature() {
-    this->_mpu.getEvent(&_acceleration, &_gyro, &_temperature);
+    this->read();
     return this->_temperature.temperature;
 }
 

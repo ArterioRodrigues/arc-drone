@@ -119,6 +119,44 @@ void loop() {
 Throttle trim is rate-limited rather than applied every loop pass; adjust
 `THROTTLE_STEP` and `THROTTLE_REPEAT_MS` in `arc-drone.ino` to taste.
 
+### Startup calibration
+
+`setup()` calibrates before the ESCs are armed, and **the craft must be
+stationary and level** for both steps:
+
+1. `mpu6050.calibrateGyro()` averages the gyro to measure its zero offset. The
+   raw offset is a few degrees per second; integrated by the filter it walks the
+   attitude estimate away from level.
+2. `calibrateLevel()` averages the accelerometer to establish which way is down
+   and records that attitude as level.
+
+Step 2 matters more than it looks. An IMU mounted a couple of degrees off makes
+the controller hold that tilt forever, and a 3° error at hover is about
+`g·sin(3°) ≈ 0.5 m/s²` of sideways acceleration — the craft picks a direction and
+accelerates away. It is flying exactly as commanded; the command is just wrong.
+
+Both print their results over serial, so check the reported level reference is
+near zero. Calibrating on a slope bakes that slope in.
+
+### Attitude filter
+
+The complementary filter blends integrated gyro with the accelerometer. The
+blend is derived from `dt` and a fixed time constant:
+
+```
+alpha = FILTER_TIME_CONSTANT / (FILTER_TIME_CONSTANT + dt)
+```
+
+A hard-coded `alpha` instead gives a time constant of `alpha·dt/(1-alpha)`, which
+changes silently with loop rate — at the rate this loop runs, `alpha = 0.98`
+worked out to roughly 0.1 s.
+
+That is too short, because the accelerometer only reads true gravity while the
+craft is not accelerating. In flight it reads thrust plus gravity, so during any
+translation it tilts and reports a lean the craft does not have. With a short
+time constant that corrupts the estimate within a fraction of a second, the
+controller "corrects" a tilt that is not there, and the craft accelerates away.
+
 ### Stabilization authority
 
 Angles from the complementary filter are in **radians**, so the PID gains are

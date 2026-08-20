@@ -70,6 +70,10 @@ PID yawPid(0, 0, 0, 100, 300);
 Filter filter;
 Mixer mixer;
 
+// Arduino's auto-generated prototypes do not carry default arguments, so
+// declare this explicitly.
+void calibrateLevel(uint16_t samples = 500);
+
 // Latched by Triangle. Survives a controller dropout on purpose: once killed,
 // nothing spins again until the pilot re-arms with the combo below.
 bool killed = false;
@@ -85,8 +89,46 @@ void setup(void) {
   Serial.begin(115200);
   controller.setup();
   mpu6050.setup();
+
+  // Must happen before the props can spin and while the craft is stationary and
+  // level. Everything downstream measures attitude relative to what is captured
+  // here, so a craft calibrated while tilted will hold that tilt in flight.
+  mpu6050.calibrateGyro();
+  calibrateLevel();
+
   esc.setup();
   lastTime = micros();
+}
+
+// Averages the resting accelerometer to establish which way is down, then tells
+// the filter that this attitude is level. Without it an IMU mounted a couple of
+// degrees off makes the controller hold a constant tilt, and the craft drifts
+// steadily in one direction - it is flying exactly as commanded, just commanded
+// wrongly.
+void calibrateLevel(uint16_t samples) {
+  Serial.println("Measuring level reference - keep the craft still and level...");
+
+  double sumX = 0, sumY = 0, sumZ = 0;
+  for (uint16_t i = 0; i < samples; i++) {
+    mpu6050.read();
+    sensors_vec_t accel = mpu6050.lastAcceleration();
+    sumX += accel.x;
+    sumY += accel.y;
+    sumZ += accel.z;
+    delay(2);
+  }
+
+  sensors_vec_t average;
+  average.x = sumX / samples;
+  average.y = sumY / samples;
+  average.z = sumZ / samples;
+
+  std::pair<double, double> level = Filter::anglesFromAccel(average);
+  filter.setLevelReference(level.first, level.second);
+  filter.setAngles(level.first, level.second);
+
+  Serial.printf("Level reference: roll=%.2f deg pitch=%.2f deg\n",
+                level.first * 180.0 / PI, level.second * 180.0 / PI);
 }
 
 void loop() {
@@ -167,8 +209,10 @@ void loop() {
                                    MIN_AUTHORITY, 1.0);
       if (benchMode) { authority = 1.0; }
 
-      sensors_vec_t acceleration = mpu6050.getAcceleration();
-      sensors_vec_t gyro = mpu6050.getGyro();
+      // One I2C read per pass, so accel and gyro come from the same instant.
+      mpu6050.read();
+      sensors_vec_t acceleration = mpu6050.lastAcceleration();
+      sensors_vec_t gyro = mpu6050.lastGyro();
 
       std::pair<double, double> pair = filter.nextAngle(gyro, acceleration, dt);
       double roll = pair.first;
