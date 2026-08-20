@@ -122,25 +122,26 @@ Throttle trim is rate-limited rather than applied every loop pass; adjust
 ### Stabilization authority
 
 Angles from the complementary filter are in **radians**, so the PID gains are
-per-radian. Correction output is scaled by the throttle headroom actually
-available:
+per-radian. `Kp = 300` means a 20° (0.35 rad) tilt asks for roughly ±105 of
+motor differential — at `base = 500` that gives `395 / 605 / 395 / 605`. Raise it
+if the quad feels sluggish, lower it if it starts to oscillate.
+
+Correction strength ramps in over `IDLE_BASE → FULL_AUTHORITY_BASE` and is full
+above that:
 
 ```
-authority = (base - IDLE_BASE) / (HOVER_BASE - IDLE_BASE)   // clamped to 0..1
+authority = (base - IDLE_BASE) / (FULL_AUTHORITY_BASE - IDLE_BASE)   // clamped
 ```
 
-Roll and pitch stack additively in the mixer, so a single motor can see up to
-twice a PID's output limit. Without scaling, a small nudge above idle
-(`base = 103`) still permitted a full-scale correction, which pinned one motor on
-the mixer's 48 floor and drove the opposite one to ~1000 — a violent lurch rather
-than stabilization. Below `MIN_AUTHORITY` the loop holds the integrators cleared
-so bench time just above idle cannot wind up an offset.
+This is only a soft start, so corrections are not jerky the instant throttle is
+cracked off idle. The real physical limit is enforced by the mixer, which scales
+corrections into whatever headroom the current throttle allows — so there is no
+need to keep suppressing them all the way up to hover.
 
-`HOVER_BASE` must roughly match the throttle your airframe actually hovers at,
-or the scaling will be wrong. Authority never falls to zero — it is floored at
-`MIN_AUTHORITY` so the loop always shows some response — and below `GROUND_BASE`
-only the integrator is held clear, leaving P and D live so tilting the frame on
-the bench still moves the motors.
+Authority never falls to zero; it is floored at `MIN_AUTHORITY` so the loop
+always shows some response. Below `GROUND_BASE` only the integrator is held
+clear, leaving P and D live so tilting the frame on the bench still moves the
+motors.
 
 ### Motor layout and mixing
 

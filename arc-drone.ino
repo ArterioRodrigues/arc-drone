@@ -17,15 +17,20 @@ ESC esc(DSHOT::DSHOT300);
                  
 double dt = 0;
 const double IDLE_BASE = 100;
-// Expected hover throttle. Correction authority is scaled against the headroom
-// between idle and this value, so it must roughly match reality.
-const double HOVER_BASE = 1400;
+// Ceiling for the throttle trim, set above the ~1400 this airframe is expected
+// to hover at so there is headroom to climb.
 const double MAX_BASE = 1600;
+
+// Authority ramps in over this range above idle, then stays full. This is only a
+// soft start so corrections are not jerky just off idle - the mixer already
+// scales corrections into whatever headroom the current throttle allows, so
+// there is no need to keep suppressing them all the way up to hover.
+const double FULL_AUTHORITY_BASE = 400;
+
 // Correction authority never drops to zero, or the quad would stop responding
 // entirely at bench throttle and there would be no way to verify the loop. This
-// is the floor applied to the headroom scaling.
+// is the floor applied to the ramp.
 const double MIN_AUTHORITY = 0.05;
-
 // Below this the quad is clearly on the ground, so the integrator is held clear
 // to stop it winding up against a surface it cannot level itself off.
 const double GROUND_BASE = 300;
@@ -45,11 +50,13 @@ unsigned long lastThrottleMs = 0;
 const unsigned long TELEMETRY_INTERVAL_MS = 200;
 unsigned long lastTelemetryMs = 0;
 
-// Angles are in radians, so these gains are per-radian. The last two arguments
-// cap the integral and the total output: roll and pitch stack additively in the
-// mixer, so the worst case on one motor is roughly twice the output limit.
-PID rollPid(200, 0.1, 10, 100, 300);
-PID pitchPid(200, 0.1, 10, 100, 300);
+// Angles are in radians, so these gains are per-radian. Kp 300 means a 20 degree
+// (0.35 rad) tilt asks for roughly +-105 of motor differential; scale it if the
+// quad feels sluggish or starts to oscillate. The last two arguments cap the
+// integral and the total output: roll and pitch stack additively in the mixer,
+// so the worst case on one motor is roughly twice the output limit.
+PID rollPid(300, 0.1, 10, 100, 300);
+PID pitchPid(300, 0.1, 10, 100, 300);
 PID yawPid(0, 0, 0, 100, 300);
 
 Filter filter;
@@ -144,13 +151,11 @@ void loop() {
       // stops one late frame from dumping a giant step into the integrator.
       dt = constrain(dt, 0.0, 0.05);
 
-      // A correction is only meaningful if there is throttle headroom to apply
-      // it symmetrically. At base 103 there are 3 units above idle, so a full
-      // +-300 correction just pins one motor on the mixer's 48 floor and slams
-      // the opposite one to full - a violent jump, not stabilization. Scaling by
-      // headroom keeps the correction proportional to what the airframe can
-      // actually deliver, while the floor keeps a visible response on the bench.
-      double authority = constrain((base - IDLE_BASE) / (HOVER_BASE - IDLE_BASE),
+      // Soft start only: ramp correction strength in just above idle so the
+      // motors do not snap to a full correction the instant throttle is cracked.
+      // The mixer enforces the real physical limit by scaling corrections into
+      // the headroom around the current throttle.
+      double authority = constrain((base - IDLE_BASE) / (FULL_AUTHORITY_BASE - IDLE_BASE),
                                    MIN_AUTHORITY, 1.0);
       if (benchMode) { authority = 1.0; }
 
