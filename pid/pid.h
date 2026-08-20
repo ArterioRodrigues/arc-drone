@@ -9,41 +9,37 @@ inline double clamp(double value, double low, double high) {
   return value;
 }
 
+// Cap on the accumulated integral, in DShot units. Fixed rather than a
+// constructor argument: it is a windup guard, not a tuning knob, and passing 0
+// by mistake silently disables the I term.
+#define PID_INTEGRAL_LIMIT 200.0
+
 class PID {
 public:
-  PID(double Kp, double Ki, double Kd, double iLimit = 200.0,
-      double outputLimit = 500.0);
+  PID(double Kp, double Ki, double Kd);
 
-  double compute(double setpoint, double measure, double dt);
-
-  // Preferred form. Takes the measured rate of change (e.g. the gyro reading)
-  // instead of differentiating the measurement, which avoids amplifying sensor
-  // noise and avoids the lag the complementary filter adds. Both hurt damping,
-  // and poor damping is what shows up as oscillation.
+  // measureRate is the measured rate of change of `measure` - feed the gyro
+  // straight in. Differentiating `measure` here instead would amplify sensor
+  // noise and inherit the complementary filter's lag, both of which weaken
+  // damping, and weak damping is what shows up as oscillation. Pass 0 when
+  // Kd is 0.
+  //
+  // The output is intentionally unbounded. The mixer already scales corrections
+  // into the throttle headroom that actually exists, so a limit here would only
+  // hide the effect of the gains.
   double compute(double setpoint, double measure, double measureRate, double dt);
 
-  // Clears the integral/derivative state. Call whenever the motors are idle or
-  // re-armed, otherwise the integrator keeps winding up while on the ground.
+  // Clears all accumulated state. Call on kill/re-arm.
   void reset();
 
-  // Clears only the accumulated integral. Unlike reset() this keeps the
-  // derivative history, so it can be called every pass while grounded without
-  // destroying the D term.
+  // Clears only the integral, so it can be called every pass while grounded.
   void resetIntegral();
 
 private:
-  double computeWithRate(double setpoint, double measure, double measureRate,
-                         double dt);
-
   double _Kp;
   double _Ki;
   double _Kd;
 
-  double _iLimit;
-  double _outputLimit;
-
-  double _previousMeasure;
   double _Iterm;
   double _lastOutput;
-  bool _hasPreviousMeasure;
 };

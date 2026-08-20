@@ -6,19 +6,20 @@
 //   m1 front-left    m2 front-right
 //   m3 back-left     m4 back-right
 //
-// Sign convention, derived from the complementary filter's angle convention
-// (roll positive = right side down, pitch positive = nose down): to correct a
-// tilt the LOW side needs more thrust. The PID computes error = 0 - angle, so
-// its output is already negative for a positive tilt, which means the low side
-// must be the one with the correction subtracted.
+// This mixer is the ONLY place motor signs are decided. There are no correction
+// factors anywhere else - if an axis pushes the wrong way, rewire the motors to
+// match this layout rather than negating something upstream. A single negation
+// upstream flips the P and D terms together, which cannot be right when only one
+// of them is inverted.
 //
-// Getting this backwards turns the loop into positive feedback: the craft
-// drives itself further into the tilt and runs away in one direction.
+// Convention: the PID computes error = 0 - angle, so its output is already
+// negative for a positive tilt. Positive roll is right-side-down, so the roll
+// output must be ADDED to the left pair (m1/m3) and SUBTRACTED from the right
+// pair (m2/m4): a right-side-down tilt then gives the right pair more thrust and
+// levels the craft. Positive pitch is nose-down, so pitch is subtracted from the
+// front pair (m1/m2) and added to the back pair (m3/m4).
 //
-// This derivation assumes a standard IMU orientation and turned out to be wrong
-// for this airframe's roll axis, so ROLL_SIGN/PITCH_SIGN in the sketch correct
-// it and are the authority. Do not "fix" the signs here from first principles -
-// verify props-off on the bench instead.
+// Yaw follows prop rotation: m1/m4 spin one way, m2/m3 the other.
 Motors Mixer::compute(double base, double roll, double pitch, double yaw) {
     double correction[4] = {
         +roll - pitch + yaw,  // m1 front-left

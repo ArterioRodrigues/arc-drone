@@ -16,67 +16,22 @@ MPU6050 mpu6050; //Default to GPIO 21 (SDA) and 22 (SCL)
 ESC esc(DSHOT::DSHOT300);
                  
 double dt = 0;
-const double IDLE_BASE = 100;
-// Throttle this airframe actually hovers at. Estimated at 800-1000, set to the
-// low end deliberately: GROUND_BASE derives from this, and a value that is too
-// high parks the threshold above real hover so the integrator never switches on
-// and the craft keeps drifting.
-//
-// To measure it without a serial cable: the throttle trim is a known ramp of
-// THROTTLE_STEP per THROTTLE_REPEAT_MS, currently 20 units/sec starting from
-// IDLE_BASE. Hold Cross from idle and time it - hover throttle is
-// IDLE_BASE + 20 * seconds_to_lift_off.
-const double HOVER_BASE = 800;
 
-// Ceiling for the throttle trim, set above hover so there is headroom to climb.
+// Throttle trim range. base starts at idle and the pilot walks it up with Cross
+// / down with Circle.
+const double IDLE_BASE = 100;
 const double MAX_BASE = 1600;
 
-// Authority ramps in over this range above idle, then stays full. This is only a
-// soft start so corrections are not jerky just off idle - the mixer already
-// scales corrections into whatever headroom the current throttle allows, so
-// there is no need to keep suppressing them all the way up to hover.
-const double FULL_AUTHORITY_BASE = 400;
-
-// Correction authority never drops to zero, or the quad would stop responding
-// entirely at bench throttle and there would be no way to verify the loop. This
-// is the floor applied to the ramp.
-const double MIN_AUTHORITY = 0.05;
-// Below this the quad is treated as still on the ground, so the integrator is
-// held clear to stop it winding up against a surface it cannot level itself off.
-//
-// Derived from HOVER_BASE so there is only one number to keep accurate. It has
-// to sit just below hover, not down at idle: the throttle trim climbs at 20
-// units/sec, so a threshold of 300 against a 1400 hover left the integrator
-// accumulating for ~55s while still on the ground.
-//
-// In practice the exposure is small, because a craft sitting on flat ground that
-// was calibrated on that same ground reports near-zero error and so integrates
-// almost nothing. The real risk is taking off from a slope - do not.
-const double GROUND_BASE = HOVER_BASE * 0.85;
-
-// Bench-verified signs. The correct values depend on how the IMU is physically
-// mounted, which cannot be determined from code - the mixer's own derivation
-// assumes a standard orientation and is wrong for this airframe, so these are
-// the authority. Verify props-off in bench mode (D-pad Up):
-//   tilt right     -> m2/m4 must rise, else flip ROLL_SIGN
-//   tilt nose down -> m1/m2 must rise, else flip PITCH_SIGN
-//
-// ROLL_SIGN is -1 because the bench test showed tilting left (m1/m3 side down)
-// speeding up m2/m4 - the high side, which drives the craft further into the
-// tilt instead of levelling it.
-const double ROLL_SIGN = -1.0;
-const double PITCH_SIGN = +1.0;
-
-double base = IDLE_BASE;
-double targetBase = IDLE_BASE;
-unsigned long lastTime = 0;
-
-// Throttle trim. The button handler runs every loop pass, so without a repeat
-// interval a held button ramps base at loop rate (hundreds of steps a second).
-// 1 unit per 50 ms gives a predictable 20 units/sec.
+// The button handler runs every loop pass, so without a repeat interval a held
+// button ramps base at loop rate. 1 unit per 50 ms gives a predictable
+// 20 units/sec, which also makes hover throttle measurable without a serial
+// cable: it is IDLE_BASE + 20 * seconds_held_to_lift_off.
 const double THROTTLE_STEP = 1.0;
 const unsigned long THROTTLE_REPEAT_MS = 50;
 unsigned long lastThrottleMs = 0;
+
+double base = IDLE_BASE;
+unsigned long lastTime = 0;
 
 // Serial is slow; printing every pass would stall the control loop.
 const unsigned long TELEMETRY_INTERVAL_MS = 200;
@@ -88,37 +43,30 @@ unsigned long lastTelemetryMs = 0;
 //
 // A compile-time switch rather than commented-out code: the body still has to
 // compile, so it cannot rot and go stale while disabled.
-#define TELEMETRY_ENABLED 0
+#define TELEMETRY_ENABLED 1
 
-// Angles are in radians, so these gains are per-radian. Kp 200 is the value the
-// airframe last flew with; it was raised to 300 while chasing a weak response,
-// but that turned out to be a sign problem, not a gain problem. Back to the
-// known-good number - tune from here, one change at a time.
+// Angles are in radians, so these gains are per-radian: a 10 degree tilt is only
+// 0.175 rad, so Kp 200 produces 35 DShot units of correction.
 //
-// Ki is staged at 0 on purpose. It exists to trim out steady drift, but drift is
-// acceptable for now and stability is not - so it stays out of the loop until
-// the craft holds a clean hover. Raise it to 50 (integral time Kp/Ki = 4s) once
-// hover is stable and the only remaining complaint is a slow lean.
+// Only roll is live. Pitch and yaw are Kp/Ki/Kd = 0 so the airframe cannot fight
+// back on axes that are not being tested - isolate one axis, get it right, then
+// copy the numbers across.
 //
-// For the record: at Ki 0 the loop cannot null a steady disturbance. P always
-// stops short, because as the error shrinks so does the push, so it settles
-// wherever it balances the disturbance and holds that small bank. That is
-// expected, and it is the drift being tolerated for now.
-PID rollPid(200, 0, 10, 50, 300);
-PID pitchPid(200, 0, 10, 50, 300);
+// Ki stays 0 until roll holds a clean hover. It exists to trim steady drift, and
+// drift is acceptable right now while stability is not. At Ki 0 the loop cannot
+// null a steady disturbance - P settles wherever it balances, holding a small
+// bank. That is expected and tolerated for now.
+//
+// Kd is damping and is what stops an overshoot turning into a divergent
+// oscillation. Do not test with Kd 0.
+PID rollPid(200, 0, 10);
+PID pitchPid(0, 0, 0);
 
-// Yaw is a RATE controller, not an angle controller: compute() is fed gyro.z
-// directly as the measurement, so Kp here acts as rate damping - it resists
-// rotation rather than holding a heading.
-//
-// It was 0, meaning yaw was completely unstabilised. Nothing opposed rotation
-// about the vertical axis, while roll and pitch corrections actively induce it:
-// motor torque scales with speed, so an asymmetric mix twists the frame. The
-// craft yaws, keeps yawing, and spins in.
-//
-// Ki stays 0. There is no magnetometer, so there is no absolute heading to hold,
-// and an integrator would wind up against a reference that does not exist.
-PID yawPid(50, 0, 0, 50, 300);
+// Yaw is a RATE controller, not an angle controller: compute() is fed gyro.z as
+// the measurement, so Kp acts as rate damping - it resists rotation rather than
+// holding a heading. Ki must stay 0: there is no magnetometer, so there is no
+// absolute heading for an integrator to work against.
+PID yawPid(0, 0, 0);
 
 Filter filter;
 Mixer mixer;
@@ -130,12 +78,6 @@ void calibrateLevel(uint16_t samples = 500);
 // Latched by Triangle. Survives a controller dropout on purpose: once killed,
 // nothing spins again until the pilot re-arms with the combo below.
 bool killed = false;
-
-// Forces full correction authority regardless of throttle so the loop can be
-// verified on the bench, where throttle is too low for a visible response.
-// PROPS OFF.
-bool benchMode = false;
-bool lastDpadUp = false;
 
 
 void setup(void) {
@@ -187,23 +129,43 @@ void calibrateLevel(uint16_t samples) {
 // All periodic serial output lives here so it can be switched off in one place.
 // Disabled it costs nothing; enabled it blocks the control loop for milliseconds
 // at a time, which shows up as sluggish, late corrections.
-void printTelemetry(double authority, double roll, double pitch,
+//
+// accRoll is the roll implied by the accelerometer alone. It is printed next to
+// the filtered roll and gyro.x specifically to check axis agreement - see the
+// bench procedure at the top of loop().
+void printTelemetry(double roll, double pitch, double accRoll,
                     sensors_vec_t gyro, sensors_vec_t acceleration,
                     double rollResult, double pitchResult, double yawResult,
                     Motors motors) {
 #if TELEMETRY_ENABLED
-  Serial.printf("base=%6.1f auth=%.2f%s | roll=%7.2f pitch=%7.2f | gyro x=%7.2f y=%7.2f z=%7.2f"
+  Serial.printf("base=%6.1f | roll=%7.3f accRoll=%7.3f gyroX=%7.3f | pitch=%7.3f"
+                " | gyro y=%7.2f z=%7.2f"
                 " | accel x=%6.2f y=%6.2f z=%6.2f"
                 " | pid r=%7.1f p=%7.1f y=%7.1f"
                 " | m1=%4d m2=%4d m3=%4d m4=%4d | dt=%.4f\n",
-                base, authority, benchMode ? " BENCH" : "", roll, pitch,
-                gyro.x, gyro.y, gyro.z,
+                base, roll, accRoll, gyro.x, pitch,
+                gyro.y, gyro.z,
                 acceleration.x, acceleration.y, acceleration.z,
                 rollResult, pitchResult, yawResult,
                 motors.m1, motors.m2, motors.m3, motors.m4, dt);
 #endif
 }
 
+// BENCH PROCEDURE - PROPS OFF. Do these in order; do not skip to step 3.
+//
+// 1. Axis agreement. Rock the frame slowly right and left and watch telemetry.
+//    While rolling right, `roll` and `accRoll` must both increase AND `gyroX`
+//    must be positive. If gyroX has the opposite sign to the direction roll is
+//    moving, the IMU's gyro and accel disagree about which way is positive. The
+//    complementary filter then fights itself and D becomes anti-damping, which
+//    no amount of gain tuning or sign flipping can fix - the craft will always
+//    diverge. Fix the mounting/axis mapping before going further.
+//
+// 2. Motor direction. Hold at idle, tilt the frame right (right side down).
+//    m2/m4 must speed up. If m1/m3 speed up instead, swap the left and right
+//    motor pairs in your wiring - do not negate anything in software.
+//
+// 3. Only once 1 and 2 both pass, put props on.
 void loop() {
   controller.processController([]() {
     ControllerPtr ctl = controller.getController();
@@ -243,18 +205,7 @@ void loop() {
       return;
     }
 
-      //int32_t leftY = ctl->axisY();
-      //targetBase = map(-leftY, -512, 512, 100, 1000);
-      //base += (targetBase - base) * 0.05;
       unsigned long nowMs = millis();
-
-      // Edge-detected: holding the pad would otherwise toggle every loop pass.
-      bool dpadUp = ctl->dpad() & DPAD_UP;
-      if (dpadUp && !lastDpadUp) {
-        benchMode = !benchMode;
-        Serial.printf("BENCH MODE %s - props off!\n", benchMode ? "ON" : "OFF");
-      }
-      lastDpadUp = dpadUp;
 
       if (nowMs - lastThrottleMs >= THROTTLE_REPEAT_MS) {
         if(ctl->a()) {  // Cross
@@ -265,22 +216,13 @@ void loop() {
           lastThrottleMs = nowMs;
         }
       }
-     
-      
+
       unsigned long now = micros();
       dt = (now - lastTime) / 1000000.0;
       lastTime = now;
       // A stalled/dropped controller callback can leave a huge gap; capping dt
       // stops one late frame from dumping a giant step into the integrator.
       dt = constrain(dt, 0.0, 0.05);
-
-      // Soft start only: ramp correction strength in just above idle so the
-      // motors do not snap to a full correction the instant throttle is cracked.
-      // The mixer enforces the real physical limit by scaling corrections into
-      // the headroom around the current throttle.
-      double authority = constrain((base - IDLE_BASE) / (FULL_AUTHORITY_BASE - IDLE_BASE),
-                                   MIN_AUTHORITY, 1.0);
-      if (benchMode) { authority = 1.0; }
 
       // One I2C read per pass, so accel and gyro come from the same instant.
       mpu6050.read();
@@ -291,11 +233,11 @@ void loop() {
       double roll = pair.first;
       double pitch = pair.second;
 
-      if (base <= GROUND_BASE) {
-        // Sitting on the bench the quad cannot level itself, so the integrators
-        // would wind to their limit and dump that offset into the motors the
-        // moment throttle came up. P and D still run, so tilting the frame gives
-        // an immediate, visible response.
+      if (base <= IDLE_BASE) {
+        // Not commanded to fly, so the craft cannot level itself and the
+        // integrator would wind to its limit and dump that offset into the
+        // motors the moment throttle came up. P and D still run, so tilting the
+        // frame gives an immediate, visible bench response.
         rollPid.resetIntegral();
         pitchPid.resetIntegral();
         yawPid.resetIntegral();
@@ -305,16 +247,19 @@ void loop() {
       // filtered angle instead amplifies sensor noise and inherits the
       // complementary filter's lag, both of which weaken damping - and weak
       // damping is what shows up as oscillation.
-      double rollResult  = rollPid.compute(0, roll, gyro.x, dt) * authority * ROLL_SIGN;
-      double pitchResult = pitchPid.compute(0, pitch, gyro.y, dt) * authority * PITCH_SIGN;
-      double yawResult   = yawPid.compute(0, gyro.z, dt) * authority;
+      //
+      // No correction factors here on purpose: the mixer owns the signs.
+      double rollResult  = rollPid.compute(0, roll, gyro.x, dt);
+      double pitchResult = pitchPid.compute(0, pitch, gyro.y, dt);
+      double yawResult   = yawPid.compute(0, gyro.z, 0, dt);
 
       Motors motors = mixer.compute(base, rollResult, pitchResult, yawResult);
       esc.sendDShotPacket(motors.m1, motors.m2, motors.m3, motors.m4);
 
       if (nowMs - lastTelemetryMs >= TELEMETRY_INTERVAL_MS) {
         lastTelemetryMs = nowMs;
-        printTelemetry(authority, roll, pitch, gyro, acceleration,
+        printTelemetry(roll, pitch, Filter::anglesFromAccel(acceleration).first,
+                       gyro, acceleration,
                        rollResult, pitchResult, yawResult, motors);
       }
   });
