@@ -171,6 +171,19 @@ craft drives itself further into the tilt and oscillates instead of levelling.
 Verify on the bench (props off, D-pad Up for bench mode) before every flight
 after touching wiring: tilt right, and `m2`/`m4` must rise.
 
+The correct signs depend on how the IMU is physically mounted, which cannot be
+determined from the code. `ROLL_SIGN` and `PITCH_SIGN` in `arc-drone.ino` exist
+so an axis can be flipped without reworking the mixer:
+
+| Bench result | Change |
+|---|---|
+| Tilt right raises m2/m4, nose down raises m1/m2 | Correct — leave both at `+1` |
+| Tilt right raises m1/m3 | `ROLL_SIGN = -1.0` |
+| Nose down raises m3/m4 | `PITCH_SIGN = -1.0` |
+| Both backwards | Set both to `-1.0` |
+
+A wrong sign is positive feedback, so test one axis at a time with props off.
+
 The mixer never clamps motors individually. Attitude is set by the *differences*
 between motors, so clipping one at the 48 floor would flatten the differential
 and the quad would stop responding precisely when it most needs to. Instead the

@@ -35,6 +35,15 @@ const double MIN_AUTHORITY = 0.05;
 // to stop it winding up against a surface it cannot level itself off.
 const double GROUND_BASE = 300;
 
+// Bench-verification aid. The correct signs depend on how the IMU is physically
+// mounted, which cannot be determined from code. Flip these to -1 if the bench
+// test shows an axis correcting the wrong way:
+//   tilt right     -> m2/m4 must rise, else flip ROLL_SIGN
+//   tilt nose down -> m1/m2 must rise, else flip PITCH_SIGN
+// Once confirmed, these can be folded back into the mixer.
+const double ROLL_SIGN = +1.0;
+const double PITCH_SIGN = +1.0;
+
 double base = IDLE_BASE;
 double targetBase = IDLE_BASE;
 unsigned long lastTime = 0;
@@ -179,8 +188,8 @@ void loop() {
       // filtered angle instead amplifies sensor noise and inherits the
       // complementary filter's lag, both of which weaken damping - and weak
       // damping is what shows up as oscillation.
-      double rollResult  = rollPid.compute(0, roll, gyro.x, dt) * authority;
-      double pitchResult = pitchPid.compute(0, pitch, gyro.y, dt) * authority;
+      double rollResult  = rollPid.compute(0, roll, gyro.x, dt) * authority * ROLL_SIGN;
+      double pitchResult = pitchPid.compute(0, pitch, gyro.y, dt) * authority * PITCH_SIGN;
       double yawResult   = yawPid.compute(0, gyro.z, dt) * authority;
 
       Motors motors = mixer.compute(base, rollResult, pitchResult, yawResult);
