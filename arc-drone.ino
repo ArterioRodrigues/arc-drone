@@ -26,12 +26,21 @@ const double MAX_BASE = 1600;
 // button ramps base at loop rate. 1 unit per 50 ms gives a predictable
 // 20 units/sec, which also makes hover throttle measurable without a serial
 // cable: it is IDLE_BASE + 20 * seconds_held_to_lift_off.
-const double THROTTLE_STEP = 1.0;
+const double THROTTLE_STEP = 5.0;
 const unsigned long THROTTLE_REPEAT_MS = 50;
 unsigned long lastThrottleMs = 0;
 
 double base = IDLE_BASE;
 unsigned long lastTime = 0;
+
+// Control loop period. The loop spins far faster than this, so the rate gate is
+// what gives the filter and PID a steady, known dt - and dt is what the gyro
+// integration and the integral term are scaled by, so it has to be real elapsed
+// time, measured once per control iteration and nowhere else.
+//
+// 4 ms (250 Hz) matches the DShot300 frame interval, so ESC frames also land at
+// the rate the protocol expects.
+const unsigned long CONTROL_PERIOD_US = 4000;
 
 // Serial is slow; printing every pass would stall the control loop.
 const unsigned long TELEMETRY_INTERVAL_MS = 200;
@@ -169,10 +178,11 @@ void printTelemetry(double roll, double pitch, double accRoll,
 void loop() {
   controller.processController([]() {
     ControllerPtr ctl = controller.getController();
-    if(ctl == nullptr || !ctl->isConnected() || !ctl->hasData()) {
-      // Without a controller the flight path below never runs, so nothing would
-      // drive the ESCs and they would time out and disarm while we wait for a
-      // connection. Keep pinging them with neutral throttle instead.
+    bool connected = (ctl != nullptr && ctl->isConnected());
+
+    if (!connected) {
+      // Without a controller nothing below drives the ESCs, and they would time
+      // out and disarm while we wait for a connection. Keep pinging them.
       esc.keepAlive();
       // Stale timestamp would otherwise produce a bogus dt on the first frame
       // after the controller shows up.
@@ -180,49 +190,68 @@ void loop() {
       return;
     }
 
-    if(ctl->y() && !killed) {  // Triangle
-      killed = true;
-      Serial.println("KILLED - press Square + L1 to re-arm");
+    // Gamepad input is only sampled when a fresh HID report has arrived.
+    // hasData() is a one-shot flag - arduino_get_controller_data() returns
+    // NO_DATA and clears data_updated on read - so it is true only on the pass
+    // that consumes a new packet.
+    //
+    // Reading buttons here is correct. Gating the CONTROL LOOP on it was not:
+    // the flight code then ran at gamepad report rate, and because the
+    // early-return path refreshed lastTime every pass, dt measured the gap
+    // between two no-data passes (microseconds) rather than the real time since
+    // the last filter update (milliseconds). The gyro term is gyro.x * dt, so a
+    // dt that small contributed almost nothing and the estimate was left to the
+    // accelerometer's 1-second path - the gyro read correctly but the angle
+    // crawled, and the loop flew on second-old attitude.
+    if (ctl->hasData()) {
+      if (ctl->y() && !killed) {  // Triangle
+        killed = true;
+        Serial.println("KILLED - press Square + L1 to re-arm");
+      }
+
+      if (killed) {
+        // Two-button combo to re-arm: a single stray press must not put the
+        // props back to idle spin.
+        if (ctl->x() && (ctl->buttons() & BUTTON_SHOULDER_L)) {
+          killed = false;
+          Serial.println("RE-ARMED");
+        }
+      } else {
+        unsigned long nowMs = millis();
+        if (nowMs - lastThrottleMs >= THROTTLE_REPEAT_MS) {
+          if (ctl->a()) {  // Cross
+            base = constrain(base + THROTTLE_STEP, IDLE_BASE, MAX_BASE);
+            lastThrottleMs = nowMs;
+          } else if (ctl->b()) {  // Circle
+            base = constrain(base - THROTTLE_STEP, IDLE_BASE, MAX_BASE);
+            lastThrottleMs = nowMs;
+          }
+        }
+      }
     }
 
-    if(killed) {
+    // Everything past this point runs at a fixed rate, independent of the
+    // gamepad. This is also what keeps DShot frames at the protocol's rate -
+    // the loop itself spins far faster than the ESCs can be commanded.
+    unsigned long now = micros();
+    if (now - lastTime < CONTROL_PERIOD_US) { return; }
+    dt = (now - lastTime) / 1000000.0;
+    lastTime = now;
+    // A dropped or reconnecting controller can still leave a large gap; capping
+    // dt stops one late frame from dumping a giant step into the integrator.
+    dt = constrain(dt, 0.0, 0.05);
+
+    if (killed) {
       // Hard stop: zero throttle straight to the ESCs, bypassing base/mixer so
-      // no PID output can leak through. Still a real DShot frame every loop, so
-      // the ESCs stay armed and responsive for the re-arm.
+      // no PID output can leak through. Still a real DShot frame, so the ESCs
+      // stay armed and responsive for the re-arm.
       esc.sendDShotPacket(0, 0, 0, 0);
       base = IDLE_BASE;
       rollPid.reset();
       pitchPid.reset();
       yawPid.reset();
-      lastTime = micros();
-
-      // Two-button combo to re-arm: a single stray press must not put the props
-      // back to idle spin.
-      if(ctl->x() && (ctl->buttons() & BUTTON_SHOULDER_L)) {
-        killed = false;
-        Serial.println("RE-ARMED");
-      }
       return;
     }
-
-      unsigned long nowMs = millis();
-
-      if (nowMs - lastThrottleMs >= THROTTLE_REPEAT_MS) {
-        if(ctl->a()) {  // Cross
-          base = constrain(base + THROTTLE_STEP, IDLE_BASE, MAX_BASE);
-          lastThrottleMs = nowMs;
-        } else if(ctl->b()) {  // Circle
-          base = constrain(base - THROTTLE_STEP, IDLE_BASE, MAX_BASE);
-          lastThrottleMs = nowMs;
-        }
-      }
-
-      unsigned long now = micros();
-      dt = (now - lastTime) / 1000000.0;
-      lastTime = now;
-      // A stalled/dropped controller callback can leave a huge gap; capping dt
-      // stops one late frame from dumping a giant step into the integrator.
-      dt = constrain(dt, 0.0, 0.05);
 
       // One I2C read per pass, so accel and gyro come from the same instant.
       mpu6050.read();
@@ -256,8 +285,9 @@ void loop() {
       Motors motors = mixer.compute(base, rollResult, pitchResult, yawResult);
       esc.sendDShotPacket(motors.m1, motors.m2, motors.m3, motors.m4);
 
-      if (nowMs - lastTelemetryMs >= TELEMETRY_INTERVAL_MS) {
-        lastTelemetryMs = nowMs;
+      unsigned long telemetryMs = millis();
+      if (telemetryMs - lastTelemetryMs >= TELEMETRY_INTERVAL_MS) {
+        lastTelemetryMs = telemetryMs;
         printTelemetry(roll, pitch, Filter::anglesFromAccel(acceleration).first,
                        gyro, acceleration,
                        rollResult, pitchResult, yawResult, motors);
