@@ -33,7 +33,7 @@ void MPU6050::displayGyroRange() {
     case MPU6050_RANGE_2000_DEG:
         Serial.println("+- 2000 deg/s");
         break;
-  }
+    }
 }
 
 void MPU6050::displayFilterBandwidth() {
@@ -60,7 +60,7 @@ void MPU6050::displayFilterBandwidth() {
     case MPU6050_BAND_5_HZ:
         Serial.println("5 Hz");
         break;
-  }
+    }
 }
 
 void MPU6050::setup() {
@@ -69,7 +69,7 @@ void MPU6050::setup() {
     if (!this->_mpu.begin()) {
         Serial.println("Failed to find MPU6050 chip....");
         Serial.println("Please check the wiring and try again.");
-        while(FAIL_TO_LOAD_MPU6050) {
+        while (FAIL_TO_LOAD_MPU6050) {
             delay(10);
         }
     }
@@ -78,14 +78,8 @@ void MPU6050::setup() {
 
     this->_mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
     this->_mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-    // The on-chip low-pass costs group delay, and delay in a feedback path is
-    // what makes corrections feel late and forces gains down to stay stable.
-    // The 5 Hz setting delays gyro and accel by ~19 ms; 44 Hz costs ~4.9 ms for
-    // the same job, and is the usual choice for a flight controller.
     this->_mpu.setFilterBandwidth(MPU6050_BAND_44_HZ);
 
-    // Default 100 kHz makes a 14-byte sample burst take ~1.5 ms of the loop.
-    // The MPU6050 is rated for 400 kHz, which cuts that to ~0.4 ms.
     Wire.setClock(400000);
 
     displayAccelerometerRange();
@@ -95,7 +89,7 @@ void MPU6050::setup() {
     this->_mpu.getEvent(&this->_acceleration, &this->_gyro, &this->_temperature);
 }
 
-MPU6050::MPU6050(){
+MPU6050::MPU6050() {
     this->_gyroBias.x = 0;
     this->_gyroBias.y = 0;
     this->_gyroBias.z = 0;
@@ -109,9 +103,7 @@ MPU6050::MPU6050(int sdaPin, int sclPin) {
     Serial.println("Initializing MPU6050 with custom SDA and SCL pins...");
 }
 
-void MPU6050::read() {
-    this->_mpu.getEvent(&_acceleration, &_gyro, &_temperature);
-}
+void MPU6050::read() { this->_mpu.getEvent(&_acceleration, &_gyro, &_temperature); }
 
 sensors_vec_t MPU6050::lastAcceleration() { return this->_acceleration.acceleration; }
 
@@ -143,8 +135,7 @@ void MPU6050::calibrateGyro(uint16_t samples) {
     this->_gyroBias.y = sumY / samples;
     this->_gyroBias.z = sumZ / samples;
 
-    Serial.printf("Gyro bias: x=%.4f y=%.4f z=%.4f rad/s\n", this->_gyroBias.x,
-                  this->_gyroBias.y, this->_gyroBias.z);
+    Serial.printf("Gyro bias: x=%.4f y=%.4f z=%.4f rad/s\n", this->_gyroBias.x, this->_gyroBias.y, this->_gyroBias.z);
 }
 
 sensors_vec_t MPU6050::getGyroBias() { return this->_gyroBias; }

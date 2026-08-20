@@ -218,6 +218,53 @@ always shows some response. Below `GROUND_BASE` only the integrator is held
 clear, leaving P and D live so tilting the frame on the bench still moves the
 motors.
 
+`GROUND_BASE` must sit just **below actual hover throttle**, not down at idle.
+The throttle trim climbs at 20 units/sec, so a threshold of 300 against a ~1400
+hover left the integrator accumulating for ~55 seconds while the craft was still
+on the ground — long enough to saturate at `iLimit` and dump a full-scale
+correction into the motors the instant it got light. Retune it if hover throttle
+changes.
+
+### Throttle and hover
+
+`HOVER_BASE` is the throttle the airframe hovers at, and `GROUND_BASE` derives
+from it at 85%. Below `GROUND_BASE` the integrator is held clear so it cannot
+wind up against ground it has no authority to level off.
+
+Set `HOVER_BASE` on the **low** side if unsure. Too high parks `GROUND_BASE`
+above real hover, so the integrator never switches on and the drift it exists to
+remove stays. Too low only widens the ground window, and a craft sitting on flat
+ground that was calibrated on that same ground reports near-zero error, so it
+integrates almost nothing. Do not take off from a slope.
+
+**Measuring hover throttle without a serial cable:** the throttle trim is a known
+ramp — `THROTTLE_STEP` per `THROTTLE_REPEAT_MS`, currently 20 units/sec from
+`IDLE_BASE`. Hold **Cross** from idle and time it with a stopwatch:
+
+```
+HOVER_BASE ≈ IDLE_BASE + 20 × seconds_to_lift_off
+```
+
+So lifting off after 35 s of held throttle means roughly `100 + 700 = 800`.
+
+### Why the bench test looks weak
+
+Tilting the frame on the ground at idle will not level it, and that is expected:
+
+* Authority is scaled down at low throttle — at `base = 150` it is `0.167`, so
+  corrections run at a sixth strength.
+* The integrator is force-cleared below `GROUND_BASE`.
+* At idle the props make almost no thrust, so tens of units of differential
+  cannot lift the frame against the ground regardless of gains.
+
+Use bench mode (D-pad Up, props off) to force `authority = 1.0`, and judge the
+*direction and proportionality* of the motor numbers rather than whether the
+craft physically levels.
+
+Note that `Kd` can never affect a **static** tilt. The D term is `-Kd * gyro`,
+and a craft sitting still has zero gyro rate, so D is exactly zero for any `Kd`.
+A steady offset that will not go away is an `I` problem, not a `D` problem.
+
 ### Motor layout and mixing
 
 Viewed from above:

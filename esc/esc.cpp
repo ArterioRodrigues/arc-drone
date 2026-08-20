@@ -95,21 +95,12 @@ void ESC::arm() {
     Serial.println("ESC Armed!");
 }
 
-// ESCs disarm if they stop seeing frames, so resend whenever the flight loop has
-// not produced a packet within a frame period (e.g. while waiting for the
-// controller to connect, or across a dropped Bluetooth report).
-//
-// Resends the *last commanded* throttle rather than neutral. Sending neutral
-// would cut the motors dead every time a controller frame was late, which is a
-// throttle dropout in flight. Before anything has been commanded the last
-// throttle is zero, so behaviour on the ground is unchanged.
 void ESC::keepAlive() {
     if (micros() - this->_lastPacketUs < this->_frameIntervalUs) {
         return;
     }
 
-    this->sendDShotPacket(this->_lastThrottle1, this->_lastThrottle2, this->_lastThrottle3,
-                          this->_lastThrottle4);
+    this->sendDShotPacket(this->_lastThrottle1, this->_lastThrottle2, this->_lastThrottle3, this->_lastThrottle4);
 }
 boolean ESC::sendDShotPacket(uint16_t throttle) {
     uint16_t packet = (throttle << 1);
@@ -153,7 +144,7 @@ boolean ESC::sendDShotPacket(uint16_t throttle) {
 }
 
 boolean ESC::sendDShotPacket(uint16_t throttle1, uint16_t throttle2, uint16_t throttle3, uint16_t throttle4) {
-    uint16_t throttles[4] = { throttle1, throttle2, throttle3, throttle4 };
+    uint16_t throttles[4] = {throttle1, throttle2, throttle3, throttle4};
     rmt_item32_t items[4][17];
 
     for (int m = 0; m < 4; m++) {

@@ -17,8 +17,18 @@ ESC esc(DSHOT::DSHOT300);
                  
 double dt = 0;
 const double IDLE_BASE = 100;
-// Ceiling for the throttle trim, set above the ~1400 this airframe is expected
-// to hover at so there is headroom to climb.
+// Throttle this airframe actually hovers at. Estimated at 800-1000, set to the
+// low end deliberately: GROUND_BASE derives from this, and a value that is too
+// high parks the threshold above real hover so the integrator never switches on
+// and the craft keeps drifting.
+//
+// To measure it without a serial cable: the throttle trim is a known ramp of
+// THROTTLE_STEP per THROTTLE_REPEAT_MS, currently 20 units/sec starting from
+// IDLE_BASE. Hold Cross from idle and time it - hover throttle is
+// IDLE_BASE + 20 * seconds_to_lift_off.
+const double HOVER_BASE = 800;
+
+// Ceiling for the throttle trim, set above hover so there is headroom to climb.
 const double MAX_BASE = 1600;
 
 // Authority ramps in over this range above idle, then stays full. This is only a
@@ -31,9 +41,18 @@ const double FULL_AUTHORITY_BASE = 400;
 // entirely at bench throttle and there would be no way to verify the loop. This
 // is the floor applied to the ramp.
 const double MIN_AUTHORITY = 0.05;
-// Below this the quad is clearly on the ground, so the integrator is held clear
-// to stop it winding up against a surface it cannot level itself off.
-const double GROUND_BASE = 300;
+// Below this the quad is treated as still on the ground, so the integrator is
+// held clear to stop it winding up against a surface it cannot level itself off.
+//
+// Derived from HOVER_BASE so there is only one number to keep accurate. It has
+// to sit just below hover, not down at idle: the throttle trim climbs at 20
+// units/sec, so a threshold of 300 against a 1400 hover left the integrator
+// accumulating for ~55s while still on the ground.
+//
+// In practice the exposure is small, because a craft sitting on flat ground that
+// was calibrated on that same ground reports near-zero error and so integrates
+// almost nothing. The real risk is taking off from a slope - do not.
+const double GROUND_BASE = HOVER_BASE * 0.85;
 
 // Bench-verified signs. The correct values depend on how the IMU is physically
 // mounted, which cannot be determined from code - the mixer's own derivation
@@ -75,8 +94,20 @@ unsigned long lastTelemetryMs = 0;
 // airframe last flew with; it was raised to 300 while chasing a weak response,
 // but that turned out to be a sign problem, not a gain problem. Back to the
 // known-good number - tune from here, one change at a time.
-PID rollPid(200, 0.1, 10, 100, 300);
-PID pitchPid(200, 0.1, 10, 100, 300);
+//
+// Ki was 0.1, which with error in radians accumulated so slowly it never reached
+// a usable value in a whole flight - the integral term was doing nothing at all.
+// P alone always stops short: as the error shrinks so does the push, so it
+// settles wherever it balances a steady disturbance (CG offset, motor or prop
+// mismatch) and holds that bank, which is what made the craft slide steadily in
+// one direction. Ki 50 gives an integral time of Kp/Ki = 4s. Raising it much
+// further destabilises rather than trimming faster.
+//
+// iLimit is 50, down from 100. The trim actually needed measures around 10-25
+// units, so 50 is ample authority while halving what a mis-set GROUND_BASE could
+// dump into the motors at liftoff.
+PID rollPid(200, 50, 10, 50, 300);
+PID pitchPid(200, 50, 10, 50, 300);
 PID yawPid(0, 0, 0, 100, 300);
 
 Filter filter;
