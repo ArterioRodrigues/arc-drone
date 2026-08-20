@@ -66,6 +66,10 @@ ESC::ESC(DSHOT dshot, gpio_num_t motorPin1, gpio_num_t motorPin2, gpio_num_t mot
     this->_dShotPause.duration1 = 0;
 
     this->_lastPacketUs = 0;
+    this->_lastThrottle1 = NEUTRAL_THROTTLE;
+    this->_lastThrottle2 = NEUTRAL_THROTTLE;
+    this->_lastThrottle3 = NEUTRAL_THROTTLE;
+    this->_lastThrottle4 = NEUTRAL_THROTTLE;
 }
 void ESC::setup() {
     Serial.println("Initializing DShot with default pins and channels...");
@@ -91,15 +95,21 @@ void ESC::arm() {
     Serial.println("ESC Armed!");
 }
 
-// ESCs disarm if they stop seeing frames, so send a neutral packet whenever the
-// flight loop has not produced one within a frame period (e.g. while waiting for
-// the controller to connect). Cheap enough to call every loop iteration.
+// ESCs disarm if they stop seeing frames, so resend whenever the flight loop has
+// not produced a packet within a frame period (e.g. while waiting for the
+// controller to connect, or across a dropped Bluetooth report).
+//
+// Resends the *last commanded* throttle rather than neutral. Sending neutral
+// would cut the motors dead every time a controller frame was late, which is a
+// throttle dropout in flight. Before anything has been commanded the last
+// throttle is zero, so behaviour on the ground is unchanged.
 void ESC::keepAlive() {
     if (micros() - this->_lastPacketUs < this->_frameIntervalUs) {
         return;
     }
 
-    this->sendDShotPacket(NEUTRAL_THROTTLE);
+    this->sendDShotPacket(this->_lastThrottle1, this->_lastThrottle2, this->_lastThrottle3,
+                          this->_lastThrottle4);
 }
 boolean ESC::sendDShotPacket(uint16_t throttle) {
     uint16_t packet = (throttle << 1);
@@ -119,6 +129,10 @@ boolean ESC::sendDShotPacket(uint16_t throttle) {
     items[16] = this->_dShotPause;
 
     this->_lastPacketUs = micros();
+    this->_lastThrottle1 = throttle;
+    this->_lastThrottle2 = throttle;
+    this->_lastThrottle3 = throttle;
+    this->_lastThrottle4 = throttle;
 
     esp_err_t error1 = rmt_write_items(this->_channel1, items, 17, true);
     esp_err_t error2 = rmt_write_items(this->_channel2, items, 17, true);
@@ -157,6 +171,10 @@ boolean ESC::sendDShotPacket(uint16_t throttle1, uint16_t throttle2, uint16_t th
     }
 
     this->_lastPacketUs = micros();
+    this->_lastThrottle1 = throttle1;
+    this->_lastThrottle2 = throttle2;
+    this->_lastThrottle3 = throttle3;
+    this->_lastThrottle4 = throttle4;
 
     esp_err_t error1 = rmt_write_items(this->_channel1, items[0], 17, true);
     esp_err_t error2 = rmt_write_items(this->_channel2, items[1], 17, true);

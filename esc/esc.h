@@ -70,4 +70,11 @@ class ESC {
     DSHOT _dshot;
     unsigned long _frameIntervalUs;
     unsigned long _lastPacketUs;
+
+    // What was last actually commanded, so keepAlive() can hold it rather than
+    // dropping the motors to neutral on a late controller frame.
+    uint16_t _lastThrottle1;
+    uint16_t _lastThrottle2;
+    uint16_t _lastThrottle3;
+    uint16_t _lastThrottle4;
 };

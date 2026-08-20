@@ -78,7 +78,15 @@ void MPU6050::setup() {
 
     this->_mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
     this->_mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-    this->_mpu.setFilterBandwidth(MPU6050_BAND_5_HZ);
+    // The on-chip low-pass costs group delay, and delay in a feedback path is
+    // what makes corrections feel late and forces gains down to stay stable.
+    // The 5 Hz setting delays gyro and accel by ~19 ms; 44 Hz costs ~4.9 ms for
+    // the same job, and is the usual choice for a flight controller.
+    this->_mpu.setFilterBandwidth(MPU6050_BAND_44_HZ);
+
+    // Default 100 kHz makes a 14-byte sample burst take ~1.5 ms of the loop.
+    // The MPU6050 is rated for 400 kHz, which cuts that to ~0.4 ms.
+    Wire.setClock(400000);
 
     displayAccelerometerRange();
     displayGyroRange();

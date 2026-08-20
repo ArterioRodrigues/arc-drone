@@ -157,6 +157,37 @@ translation it tilts and reports a lean the craft does not have. With a short
 time constant that corrupts the estimate within a fraction of a second, the
 controller "corrects" a tilt that is not there, and the craft accelerates away.
 
+### Loop latency
+
+Delay in a feedback path is what makes corrections arrive late, and late
+corrections force gains down to stay stable. Sources that were removed:
+
+| Source | Was | Now |
+|---|---|---|
+| MPU6050 on-chip low-pass | 5 Hz, ~19 ms group delay | 44 Hz, ~4.9 ms |
+| I2C bus clock | 100 kHz, ~1.5 ms per sample | 400 kHz, ~0.4 ms |
+| Telemetry `Serial.printf` | ~16 ms stall every 200 ms | compiled out |
+
+That is roughly 15 ms of pure delay out of the loop.
+
+Telemetry lives in `printTelemetry()` and is controlled by `TELEMETRY_ENABLED`
+in `arc-drone.ino`. Set it to `1` for bench work and back to `0` before flying.
+It is a compile-time switch rather than commented-out code so the body still has
+to compile and cannot go stale. Event messages (kill, re-arm, bench mode) are
+left on — they fire once, not every pass.
+
+Raising the DLPF to 44 Hz lets more gyro noise through, which the D term
+amplifies. If the motors get twitchy or hissy, drop `Kd` before reverting the
+bandwidth; `MPU6050_BAND_21_HZ` (~8.5 ms) is the intermediate step.
+
+### ESC keep-alive
+
+`ESC::keepAlive()` resends the **last commanded** throttle when the flight loop
+has not produced a frame within a frame period. It must not send neutral: the
+flight path only runs when the controller reports new data, so a late or dropped
+Bluetooth frame would cut the motors dead mid-air. Before anything is commanded
+the stored throttle is zero, so ground behaviour is unchanged.
+
 ### Stabilization authority
 
 Angles from the complementary filter are in **radians**, so the PID gains are

@@ -63,6 +63,14 @@ unsigned long lastThrottleMs = 0;
 const unsigned long TELEMETRY_INTERVAL_MS = 200;
 unsigned long lastTelemetryMs = 0;
 
+// Telemetry is off in flight. The line is ~185 characters, which at 115200 baud
+// takes ~16 ms to push out - and Serial blocks once its TX buffer fills, so that
+// stall lands directly in the control loop. Set to 1 for bench debugging.
+//
+// A compile-time switch rather than commented-out code: the body still has to
+// compile, so it cannot rot and go stale while disabled.
+#define TELEMETRY_ENABLED 0
+
 // Angles are in radians, so these gains are per-radian. Kp 200 is the value the
 // airframe last flew with; it was raised to 300 while chasing a weak response,
 // but that turned out to be a sign problem, not a gain problem. Back to the
@@ -133,6 +141,26 @@ void calibrateLevel(uint16_t samples) {
 
   Serial.printf("Level reference: roll=%.2f deg pitch=%.2f deg\n",
                 level.first * 180.0 / PI, level.second * 180.0 / PI);
+}
+
+// All periodic serial output lives here so it can be switched off in one place.
+// Disabled it costs nothing; enabled it blocks the control loop for milliseconds
+// at a time, which shows up as sluggish, late corrections.
+void printTelemetry(double authority, double roll, double pitch,
+                    sensors_vec_t gyro, sensors_vec_t acceleration,
+                    double rollResult, double pitchResult, double yawResult,
+                    Motors motors) {
+#if TELEMETRY_ENABLED
+  Serial.printf("base=%6.1f auth=%.2f%s | roll=%7.2f pitch=%7.2f | gyro x=%7.2f y=%7.2f z=%7.2f"
+                " | accel x=%6.2f y=%6.2f z=%6.2f"
+                " | pid r=%7.1f p=%7.1f y=%7.1f"
+                " | m1=%4d m2=%4d m3=%4d m4=%4d | dt=%.4f\n",
+                base, authority, benchMode ? " BENCH" : "", roll, pitch,
+                gyro.x, gyro.y, gyro.z,
+                acceleration.x, acceleration.y, acceleration.z,
+                rollResult, pitchResult, yawResult,
+                motors.m1, motors.m2, motors.m3, motors.m4, dt);
+#endif
 }
 
 void loop() {
@@ -245,15 +273,8 @@ void loop() {
 
       if (nowMs - lastTelemetryMs >= TELEMETRY_INTERVAL_MS) {
         lastTelemetryMs = nowMs;
-        Serial.printf("base=%6.1f auth=%.2f%s | roll=%7.2f pitch=%7.2f | gyro x=%7.2f y=%7.2f z=%7.2f"
-                      " | accel x=%6.2f y=%6.2f z=%6.2f"
-                      " | pid r=%7.1f p=%7.1f y=%7.1f"
-                      " | m1=%4d m2=%4d m3=%4d m4=%4d | dt=%.4f\n",
-                      base, authority, benchMode ? " BENCH" : "", roll, pitch,
-                      gyro.x, gyro.y, gyro.z,
-                      acceleration.x, acceleration.y, acceleration.z,
-                      rollResult, pitchResult, yawResult,
-                      motors.m1, motors.m2, motors.m3, motors.m4, dt);
+        printTelemetry(authority, roll, pitch, gyro, acceleration,
+                       rollResult, pitchResult, yawResult, motors);
       }
   });
 }
