@@ -220,6 +220,13 @@ so an axis can be flipped without reworking the mixer:
 | Nose down raises m3/m4 | `PITCH_SIGN = -1.0` |
 | Both backwards | Set both to `-1.0` |
 
+**This airframe currently needs `ROLL_SIGN = -1.0`.** The bench test showed a
+left tilt speeding up `m2`/`m4` — the high side — so the loop was driving itself
+further into the tilt. That is what made the craft pick a direction and
+accelerate away rather than level off. The mixer's own derivation assumes a
+standard IMU orientation and is wrong here; these constants are the authority,
+so do not re-derive the mixer signs from first principles.
+
 A wrong sign is positive feedback, so test one axis at a time with props off.
 
 The mixer never clamps motors individually. Attitude is set by the *differences*

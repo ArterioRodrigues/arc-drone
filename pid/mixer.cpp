@@ -13,7 +13,12 @@
 // must be the one with the correction subtracted.
 //
 // Getting this backwards turns the loop into positive feedback: the craft
-// drives itself further into the tilt and oscillates rather than levelling.
+// drives itself further into the tilt and runs away in one direction.
+//
+// This derivation assumes a standard IMU orientation and turned out to be wrong
+// for this airframe's roll axis, so ROLL_SIGN/PITCH_SIGN in the sketch correct
+// it and are the authority. Do not "fix" the signs here from first principles -
+// verify props-off on the bench instead.
 Motors Mixer::compute(double base, double roll, double pitch, double yaw) {
     double correction[4] = {
         +roll - pitch + yaw,  // m1 front-left
