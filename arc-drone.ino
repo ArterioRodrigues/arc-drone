@@ -47,25 +47,30 @@ unsigned long lastThrottleMs = 0;
 // at 400 left the whole final approach to liftoff - the most tip-prone part of
 // the takeoff - running the integrator against a fixed floor.
 //
-// So the threshold sits ABOVE hover instead: passing it means the craft is
-// climbing, which it cannot do while grounded. Because a hovering craft then
-// sits back below the threshold, the result is LATCHED rather than tested every
-// pass - otherwise the integrator would switch off in the one flight regime it
-// exists to serve. The latch clears on kill, which is the only point the craft
-// is known to be back on the ground.
+// Measured hover is 455 (flight recorder, base at kill with max base equal - the
+// craft was killed the moment it went light, so that figure is hover rather than
+// a climb).
 //
-// THIS NUMBER IS NOT YET MEASURED. 500 was derived from an assumed ~450 hover,
-// and telemetry has since shown the craft still firmly on the ground at base
-// 630 - so real hover is higher than that, and the gate was opening while
-// grounded on every single run. That is the exact failure the latch exists to
-// prevent, and it saturated both integrators into a permanent bank.
+// The threshold therefore sits just BELOW hover, not above it. Above-hover was
+// the right instinct for the wrong airframe: this one is flown up to a hover and
+// held there, never climbing past it, so a threshold above 455 would never latch
+// and the integrator would never run in the one regime it exists to serve.
 //
-// It is parked high deliberately. Erring high only means the latch never trips,
-// which with Ki at 0 costs nothing and with Ki live merely leaves steady drift
-// untrimmed. Erring low re-creates the tip-over. Measure hover first (hold Cross
-// from idle and time it: base climbs 100 units/sec from IDLE_BASE), then set
-// this just above the measured figure before putting Ki back.
-const double LIFTOFF_BASE = 1200;
+// Below-hover is safe here because what matters is not which side of hover the
+// gate sits on, it is how many SECONDS the craft spends grounded above it. The
+// ramp is 100 units/sec, so 420 leaves (455-420)/100 = 0.35 s of grounded
+// integration, which at Ki 50 and a 2.6 degree error accumulates well under one
+// DShot unit. The earlier failure was not the 400 threshold itself; it was that
+// the craft could not lift off at all, so it sat above the gate for tens of
+// seconds and wound to saturation.
+//
+// That remains the failure mode to watch. If the craft ever stops lifting off -
+// heavier battery, tired pack, cold - it will sit above 420 winding up, and the
+// symptom is the one already seen: large pid outputs with the angles near zero,
+// and a hard diagonal bank on the ground. Kill clears the latch.
+//
+// Re-measure if the airframe's weight changes: it must stay just below hover.
+const double LIFTOFF_BASE = 420;
 bool airborne = false;
 
 double base = IDLE_BASE;
@@ -100,34 +105,36 @@ unsigned long lastTelemetryMs = 0;
 // stable hover, and there is no reason to raise them to match roll until pitch
 // actually misbehaves.
 //
-// Ki is staged back to 0. It was briefly live on the assumption that the craft
-// held a clean hover; it does not - it has never left the ground. Telemetry from
-// a grounded run at base 630 showed both integrators saturated against
-// PID_INTEGRAL_LIMIT while the craft sat level to within 0.1 degree:
+// Ki is live again, now that the craft holds a hover and the gate below is set
+// against a MEASURED hover rather than a guessed one.
 //
-//   roll=-0.002 pitch=-0.002 | pid r= -33.4 p= +40.2 | m1=556 m2=623 m3=637 m4=704
+// It is back because the flight recorder showed the lean is real rather than a
+// sensor artefact. The steady attitude before kill was roll -2.59 deg, pitch
+// -1.25 deg: non-zero, which means P is settling against a genuine disturbance
+// it cannot null, not chasing a false zero. Had the recorded angles been near
+// zero while the craft drifted, the level reference would have been the fault
+// and Ki would have made it worse by driving harder toward a wrong target.
 //
-// P contributes 0.4 units at that error, so the entire 148-unit spread between
-// m1 and m4 was integrator. That is a hard diagonal bank commanded while level,
-// and it is what tipped the craft over on the floor - the loop was not failing
-// to correct a tilt, it was actively producing one.
+// The trim required is small - 0.045 rad x Kp 200 = 9 units on roll, 0.022 rad
+// x Kp 100 = 2 units on pitch - so Ki has to shift single digits, comfortably
+// inside PID_INTEGRAL_LIMIT. If it ever needs to approach that limit, the fault
+// is upstream (a false level reference, a thrust asymmetry, CG) and raising Ki
+// only hides it.
 //
-// Worse, it does not recover on its own. The unwind rate is Ki * error, so at
-// 0.002 rad it sheds 0.12 units/sec: over five minutes to walk back from the
-// limit. A saturated integrator here is effectively permanent.
+// Ki is in DShot units per (radian-second) and is INDEPENDENT of Kp - the I term
+// is added straight to the output - so the same value gives roll and pitch equal
+// trim authority even though their Kp differ. 50 covers a 9-unit trim in a few
+// seconds. Lower it if the craft develops a slow wallow.
 //
-// It wound up because the liftoff gate below opened while the craft was still
-// grounded (see LIFTOFF_BASE). Both faults have to be fixed before Ki goes back
-// in, and in the right order: measure hover, set LIFTOFF_BASE above it, confirm
-// a stable hover, and only then raise Ki - 50 is the value to return to. Until
-// then the loop cannot null a steady disturbance, so P settles wherever it
-// balances and holds a small permanent bank. That lean is expected, not a fault,
-// and it is a far smaller problem than the one it replaces.
+// It remains entirely dependent on the liftoff latch (LIFTOFF_BASE / airborne).
+// Without a working gate the integral accumulates while the craft is grounded
+// and unable to correct, saturates, and dumps a hard bank into the motors - the
+// exact failure that previously tipped this airframe over on the floor.
 //
 // Kd is damping and is what stops an overshoot turning into a divergent
 // oscillation. Do not test with Kd 0.
-PID rollPid(200, 0, 10);
-PID pitchPid(100, 0, 5);
+PID rollPid(200, 50, 10);
+PID pitchPid(100, 50, 5);
 
 // Yaw is a RATE controller, not an angle controller: compute() is fed gyro.z as
 // the measurement, so Kp acts as rate damping - it resists rotation rather than
