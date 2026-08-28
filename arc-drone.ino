@@ -151,14 +151,30 @@ PID pitchPid(100, 50, 5);
 // Ki stays 0 for now, but not because a magnetometer is missing: integrating
 // yaw RATE error gives heading relative to where the craft started, which is how
 // heading-hold works on most flight controllers without a compass. It is left at
-// 0 because it drifts with gyro bias and because plain rate damping should be
-// proven first.
+// 0 because plain rate damping should be proven first, and because a wrong-signed
+// yaw axis with an integrator winds up far faster than one without.
 //
-// All three are 0 today: hover testing showed the craft holds its heading
-// unaided, so the prop pairs are torque-balanced and there is nothing to
-// correct. Before giving yaw any gain, run bench step 5 - the yaw sign is
-// unverified, and an inverted yaw axis is positive feedback that spins up.
-PID yawPid(0, 0, 0);
+// Kp went from 0 to 30 because the craft was seen rotating in a hover. An
+// earlier note here claimed it held heading unaided; that came from flights that
+// were killed within a couple of seconds because the craft was drifting
+// backwards, which is not long enough for a slow constant torque to show. Once
+// the pitch trim stopped the drift and the hovers got longer, the rotation
+// appeared. The trim did not cause it - pitch and yaw are orthogonal in the
+// mixer, pitch entering as (-,-,+,+) and yaw as (+,-,-,+), so the pitch
+// coefficients sum to zero over each yaw pair - it only made it visible.
+//
+// EXPECT Kp ALONE TO SLOW THE SPIN, NOT STOP IT. This is a rate controller with
+// a setpoint of 0, so a constant torque settles at whatever rate makes
+// Kp * rate equal that torque - exactly the steady-state error that Ki = 0 left
+// on roll and pitch. A slow residual rotation is the SUCCESS case here and the
+// cue to add Ki, not evidence that 30 is too low. Raising Kp to chase it just
+// finds the noise limit: gyro.z goes straight into P with no filtering.
+//
+// Before flying this, run bench step 5. The yaw sign has never been verified,
+// and it is the one axis where a wrong sign is positive feedback - the
+// correction adds to the rotation and the craft accelerates into a spin instead
+// of tipping over and stopping.
+PID yawPid(30, 0, 0);
 
 Filter filter;
 Mixer mixer;
@@ -319,9 +335,9 @@ void printTelemetry(double roll, double pitch, double accRoll, double accPitch,
 //    layout - do not negate anything in software, for the reason given at the
 //    top of pid/mixer.cpp.
 //
-// 5. Yaw motor direction. ONLY needed when yaw gains are non-zero - yawPid is
-//    currently (0, 0, 0), so yaw contributes nothing and this check can wait.
-//    Do it before ever giving yaw a gain, because an inverted yaw axis is
+// 5. Yaw motor direction. REQUIRED - yawPid now has a non-zero Kp, so yaw
+//    reaches the motors on every pass.
+//    Do it before flying, because an inverted yaw axis is
 //    positive feedback: the correction adds to the rotation it should oppose
 //    and the craft accelerates into a spin.
 //
@@ -330,7 +346,7 @@ void printTelemetry(double roll, double pitch, double accRoll, double accPitch,
 //    tilt; there is no such reference for heading, so the motor-direction test
 //    below is the only check available.
 //
-//    Temporarily set yawPid to (30, 0, 0). Note that 30 is not comparable to
+//    yawPid is already at (30, 0, 0). Note that 30 is not comparable to
 //    the roll/pitch numbers: yaw is a RATE controller fed gyro.z, so its Kp is
 //    per rad/s, while roll and pitch are ANGLE controllers with Kp per radian.
 //    Copying 200 across would be a huge gain, not an equivalent one.
