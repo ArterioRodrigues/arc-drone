@@ -58,6 +58,12 @@ public:
 
   // Feeds the attitude average. Safe to call every control pass; it is a couple
   // of multiplies and touches no flash.
+  //
+  // Call this ONLY while the craft is airborne. The interesting quantity is the
+  // lean it holds in the air, and time spent sitting on the ground reads as
+  // level - so including the throttle ramp drags the average toward zero by an
+  // amount that depends on how long the ramp took, which makes two flights
+  // incomparable.
   void update(double roll, double pitch, double dt);
 
   // Commits the record. A no-op unless throttle was advanced since the last
@@ -75,5 +81,9 @@ private:
   double _maxBase;
   double _rollAvg;
   double _pitchAvg;
+  // Seconds of airborne averaging behind the figures above. Recorded because
+  // the average needs roughly 3x FLIGHT_AVG_TAU to settle, so without it there
+  // is no way to tell a converged reading from one still climbing out of zero.
+  double _airborneS;
   bool _pending;
 };

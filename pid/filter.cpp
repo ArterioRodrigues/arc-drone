@@ -7,6 +7,8 @@ Filter::Filter(double timeConstant) {
     this->_pitch = 0.0;
     this->_rollTrim = 0.0;
     this->_pitchTrim = 0.0;
+    this->_rollTrimPilot = 0.0;
+    this->_pitchTrimPilot = 0.0;
 }
 
 // Roll is exact at any attitude: atan2(y, z) reduces to the roll angle no matter
@@ -38,8 +40,16 @@ void Filter::setLevelReference(double roll, double pitch) {
     this->_pitchTrim = pitch;
 }
 
+void Filter::setPilotTrim(double roll, double pitch) {
+    this->_rollTrimPilot = roll;
+    this->_pitchTrimPilot = pitch;
+}
+
 std::pair<double, double> Filter::nextAngle(sensors_vec_t gyro, sensors_vec_t accel, double dt) {
-    if (!(dt > 0.0)) { return {_roll - _rollTrim, _pitch - _pitchTrim}; }
+    if (!(dt > 0.0)) {
+        return {_roll - _rollTrim - _rollTrimPilot,
+                _pitch - _pitchTrim - _pitchTrimPilot};
+    }
 
     double magnitude = sqrt(accel.x * accel.x + accel.y * accel.y + accel.z * accel.z);
     bool trustAccel = magnitude > ACCEL_TRUST_LOW * SENSORS_GRAVITY_EARTH &&
@@ -62,5 +72,6 @@ std::pair<double, double> Filter::nextAngle(sensors_vec_t gyro, sensors_vec_t ac
     this->_roll = alpha * (this->_roll + gyro.x * dt) + (1 - alpha) * accelAngles.first;
     this->_pitch = alpha * (this->_pitch + gyro.y * dt) + (1 - alpha) * accelAngles.second;
 
-    return {this->_roll - this->_rollTrim, this->_pitch - this->_pitchTrim};
+    return {this->_roll - this->_rollTrim - this->_rollTrimPilot,
+            this->_pitch - this->_pitchTrim - this->_pitchTrimPilot};
 }

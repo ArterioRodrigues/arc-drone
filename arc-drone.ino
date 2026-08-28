@@ -12,6 +12,8 @@
 #include "pid/mixer.cpp"
 #include "recorder/recorder.h"
 #include "recorder/recorder.cpp"
+#include "trim/trim.h"
+#include "trim/trim.cpp"
 
 Drone::Controller controller;
 MPU6050 mpu6050; //Default to GPIO 21 (SDA) and 22 (SCL)
@@ -174,6 +176,21 @@ bool killed = false;
 // and prints them at the next boot. See recorder/recorder.h.
 FlightRecorder recorder(IDLE_BASE);
 
+// Pilot attitude trim, adjusted with the D-pad and persisted to NVS. The level
+// reference is only as good as how the craft happened to be resting at boot;
+// this is how that error gets nulled out from the air. See trim/trim.h.
+AttitudeTrim trim;
+
+// Previous D-pad bitmask, for edge detection. dpad() reports which directions
+// are HELD, so acting on the level would apply a trim step on every pass the
+// button is down - a fraction of a second of contact would run the trim to its
+// clamp. Only the 0->1 transition counts as a press.
+//
+// Updated solely inside the hasData() block: outside it the report is stale, so
+// refreshing there would clear the held state and let the next real report look
+// like a fresh press.
+uint8_t lastDpad = 0;
+
 
 void setup(void) {
   Serial.begin(115200);
@@ -191,6 +208,14 @@ void setup(void) {
   // here, so a craft calibrated while tilted will hold that tilt in flight.
   mpu6050.calibrateGyro();
   calibrateLevel();
+
+  // After calibrateLevel(), which sets the reference the trim is applied on top
+  // of. Both are printed so they can be read together - a large reference with
+  // an equal and opposite trim means the IMU is mounted crooked, and the fix is
+  // a screwdriver rather than more trim.
+  trim.setup();
+  filter.setPilotTrim(trim.roll(), trim.pitch());
+  trim.printCurrent();
 
   esc.setup();
   lastTime = micros();
@@ -360,9 +385,34 @@ void loop() {
         if (ctl->x() && (ctl->buttons() & BUTTON_SHOULDER_L)) {
           killed = false;
           recorder.reset();
+          lastDpad = 0;
           Serial.println("RE-ARMED");
         }
       } else {
+        // Attitude trim. Press the direction you want the craft to LEAN, which
+        // is the direction it will then accelerate: Up is nose-down, so Up
+        // corrects a craft that keeps drifting backwards.
+        //
+        // Live rather than deferred to the ground: a trim is judged by whether
+        // the drift stops, and that can only be seen while hovering. One step is
+        // 0.25 deg, or under half a DShot unit of immediate change, so tapping
+        // mid-hover does not upset the craft.
+        uint8_t dpad = ctl->dpad();
+        uint8_t pressed = dpad & ~lastDpad;
+        lastDpad = dpad;
+
+        int rollSteps = 0;
+        int pitchSteps = 0;
+        if (pressed & DPAD_UP) { pitchSteps += 1; }
+        if (pressed & DPAD_DOWN) { pitchSteps -= 1; }
+        if (pressed & DPAD_RIGHT) { rollSteps += 1; }
+        if (pressed & DPAD_LEFT) { rollSteps -= 1; }
+
+        if (trim.adjust(rollSteps, pitchSteps)) {
+          filter.setPilotTrim(trim.roll(), trim.pitch());
+          trim.printCurrent();
+        }
+
         unsigned long nowMs = millis();
         if (nowMs - lastThrottleMs >= THROTTLE_REPEAT_MS) {
           if (ctl->a()) {  // Cross
@@ -398,6 +448,9 @@ void loop() {
       // takes milliseconds, and nothing may sit between the kill and the zero
       // frame. base is still the flight value here - it is reset below.
       recorder.save(base);
+      // Same reasoning as the record: motors are already stopped, and NVS is
+      // only touched if the trim actually changed this flight.
+      trim.save();
       base = IDLE_BASE;
       // Kill is the only moment the craft is known to be back on the ground, so
       // it is the only place the liftoff latch can safely be cleared.
@@ -417,9 +470,13 @@ void loop() {
       double roll = pair.first;
       double pitch = pair.second;
 
-      recorder.update(roll, pitch, dt);
-
       if (base >= LIFTOFF_BASE) { airborne = true; }
+
+      // Only averaged while airborne. On the ground the craft reads level, so
+      // including the throttle ramp pulls the recorded lean toward zero by an
+      // amount that varies with how long the ramp took - which is what made the
+      // first two flights' figures incomparable.
+      if (airborne) { recorder.update(roll, pitch, dt); }
 
       if (!airborne) {
         // Still on the ground, so the craft cannot level itself and the

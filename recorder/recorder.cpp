@@ -7,6 +7,7 @@
 #define KEY_MAX_BASE "maxBase"
 #define KEY_ROLL_DEG "rollDeg"
 #define KEY_PITCH_DEG "pitchDeg"
+#define KEY_AIRBORNE_S "airborneS"
 
 FlightRecorder::FlightRecorder(double idleBase, double tau) {
   this->_idleBase = idleBase;
@@ -23,6 +24,7 @@ void FlightRecorder::reset() {
   this->_maxBase = this->_idleBase;
   this->_rollAvg = 0;
   this->_pitchAvg = 0;
+  this->_airborneS = 0;
   this->_pending = false;
 }
 
@@ -32,12 +34,18 @@ void FlightRecorder::printLast() {
     return;
   }
 
+  float airborneS = this->_prefs.getFloat(KEY_AIRBORNE_S, 0);
+
   Serial.printf("Last flight: base at kill=%.0f  max base=%.0f"
-                "  | steady attitude before kill: roll=%.2f deg pitch=%.2f deg\n",
+                "  | airborne %.1fs: roll=%.2f deg pitch=%.2f deg%s\n",
                 this->_prefs.getFloat(KEY_KILL_BASE, 0),
                 this->_prefs.getFloat(KEY_MAX_BASE, 0),
+                airborneS,
                 this->_prefs.getFloat(KEY_ROLL_DEG, 0),
-                this->_prefs.getFloat(KEY_PITCH_DEG, 0));
+                this->_prefs.getFloat(KEY_PITCH_DEG, 0),
+                // The average needs ~3x the time constant to settle, so a short
+                // hop understates the lean and must not be read as an improvement.
+                airborneS < 3.0 * FLIGHT_AVG_TAU ? "  [SHORT - understated]" : "");
 }
 
 void FlightRecorder::noteThrottle(double base) {
@@ -59,6 +67,7 @@ void FlightRecorder::update(double roll, double pitch, double dt) {
 
   this->_rollAvg += (roll - this->_rollAvg) * alpha;
   this->_pitchAvg += (pitch - this->_pitchAvg) * alpha;
+  this->_airborneS += dt;
 }
 
 void FlightRecorder::save(double killBase) {
@@ -74,8 +83,9 @@ void FlightRecorder::save(double killBase) {
   this->_prefs.putFloat(KEY_MAX_BASE, (float)this->_maxBase);
   this->_prefs.putFloat(KEY_ROLL_DEG, (float)rollDeg);
   this->_prefs.putFloat(KEY_PITCH_DEG, (float)pitchDeg);
+  this->_prefs.putFloat(KEY_AIRBORNE_S, (float)this->_airborneS);
 
   Serial.printf("Flight recorded: base at kill=%.0f  max base=%.0f"
-                "  roll=%.2f deg pitch=%.2f deg\n",
-                killBase, this->_maxBase, rollDeg, pitchDeg);
+                "  airborne %.1fs  roll=%.2f deg pitch=%.2f deg\n",
+                killBase, this->_maxBase, this->_airborneS, rollDeg, pitchDeg);
 }

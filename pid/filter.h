@@ -54,10 +54,21 @@ public:
   // that tilt, so the craft accelerates steadily in one direction.
   void setLevelReference(double roll, double pitch);
 
+  // Pilot trim, applied on top of the calibrated level reference.
+  //
+  // Held separately rather than folded into the reference because
+  // setLevelReference() runs on every boot: fold them together and each
+  // calibration silently discards the trim. Keeping them apart also means both
+  // can be reported, and "reference -4.14 deg, trim +4.10 deg" is the reading
+  // that identifies a mechanical mounting error rather than hiding it.
+  void setPilotTrim(double roll, double pitch);
+
 private:
   double _roll;
   double _pitch;
   double _rollTrim;
   double _pitchTrim;
+  double _rollTrimPilot;
+  double _pitchTrimPilot;
   double _timeConstant;
 };
