@@ -30,26 +30,33 @@ const double THROTTLE_STEP = 5.0;
 const unsigned long THROTTLE_REPEAT_MS = 50;
 unsigned long lastThrottleMs = 0;
 
-// Throttle above which the integrators are allowed to accumulate - in effect a
-// "probably airborne" test. Throttle is the only signal available for this:
-// there is no altitude sensor and no weight-on-wheels switch.
+// Throttle at which the craft is taken to have committed to leaving the ground,
+// and the latch that records it.
 //
-// It matters because the integrator's job is to trim a steady attitude error,
-// and while the craft is sitting on the ground it CANNOT correct its attitude
-// no matter what the motors do. Every second spent grounded above this gate
-// therefore winds the integral against an error it is powerless to fix, and
-// that stored offset is dumped into the motors as a bank the instant the craft
-// leaves the ground.
+// The integrator's job is to trim a steady attitude error, and while the craft
+// is sitting on the ground it CANNOT correct its attitude no matter what the
+// motors do. Every pass spent grounded with the integrator running therefore
+// winds it against an error it is powerless to fix, and that stored offset is
+// dumped into the motors as a bank the instant the craft goes light on its feet.
 //
-// Gating at IDLE_BASE is far too low to do that job. Measured hover is ~450 and
-// the ramp above is 100 units/sec, so an IDLE_BASE gate leaves ~3.5 seconds of
-// grounded wind-up before liftoff. Sitting just under hover cuts that to well
-// under a second.
+// The previous gate compared base against a threshold set just BELOW hover,
+// which had it exactly backwards: below hover is precisely when the craft is
+// still on the ground. With hover at ~450 and the ramp at 100 units/sec, a gate
+// at 400 left the whole final approach to liftoff - the most tip-prone part of
+// the takeoff - running the integrator against a fixed floor.
 //
-// Re-measure this if the airframe's weight changes: it must stay just BELOW
-// hover throttle. Set too high the integrator never runs and steady drift comes
-// back; set too low the ground wind-up returns.
-const double INTEGRAL_ENABLE_BASE = 400;
+// So the threshold sits ABOVE hover instead: passing it means the craft is
+// climbing, which it cannot do while grounded. Because a hovering craft then
+// sits back below the threshold, the result is LATCHED rather than tested every
+// pass - otherwise the integrator would switch off in the one flight regime it
+// exists to serve. The latch clears on kill, which is the only point the craft
+// is known to be back on the ground.
+//
+// Re-measure if the airframe's weight changes: it must stay just ABOVE hover.
+// Too low and grounded wind-up returns; too high and the craft never latches,
+// so steady drift is never trimmed out.
+const double LIFTOFF_BASE = 500;
+bool airborne = false;
 
 double base = IDLE_BASE;
 unsigned long lastTime = 0;
@@ -97,7 +104,7 @@ unsigned long lastTelemetryMs = 0;
 // cancel a 3 degree bank in roughly 4 seconds. Raise it if drift persists, lower
 // it if the craft develops a slow wallow.
 //
-// Ki depends on the ground wind-up gate above (INTEGRAL_ENABLE_BASE) to be safe.
+// Ki depends on the liftoff latch above (LIFTOFF_BASE / airborne) to be safe.
 // Without it the integral accumulates during the throttle ramp while the craft
 // is still on the ground and unable to correct, then dumps that offset as a bank
 // at liftoff.
@@ -352,6 +359,9 @@ void loop() {
       // stay armed and responsive for the re-arm.
       esc.sendDShotPacket(0, 0, 0, 0);
       base = IDLE_BASE;
+      // Kill is the only moment the craft is known to be back on the ground, so
+      // it is the only place the liftoff latch can safely be cleared.
+      airborne = false;
       rollPid.reset();
       pitchPid.reset();
       yawPid.reset();
@@ -367,11 +377,13 @@ void loop() {
       double roll = pair.first;
       double pitch = pair.second;
 
-      if (base < INTEGRAL_ENABLE_BASE) {
-        // Not flying yet, so the craft cannot level itself and the integrator
-        // would wind to its limit and dump that offset into the motors the
-        // moment it left the ground. P and D still run, so tilting the frame
-        // gives an immediate, visible bench response.
+      if (base >= LIFTOFF_BASE) { airborne = true; }
+
+      if (!airborne) {
+        // Still on the ground, so the craft cannot level itself and the
+        // integrator would wind against a fixed floor, then dump that offset
+        // into the motors the moment it went light on its feet. P and D still
+        // run, so tilting the frame gives an immediate, visible bench response.
         rollPid.resetIntegral();
         pitchPid.resetIntegral();
         yawPid.resetIntegral();

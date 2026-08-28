@@ -13,6 +13,27 @@
 // ride out those transients, short enough that gyro drift cannot accumulate.
 #define FILTER_TIME_CONSTANT 1.0
 
+// Band around 1g within which an accelerometer sample is believed to be
+// measuring gravity and nothing else.
+//
+// This matters more than it looks. The accelerometer is the ONLY thing
+// anchoring this estimate to true vertical, so a corrupted sample does not
+// merely add noise to the angle - it moves the definition of level, and the
+// controller then banks the craft to match it. That failure is invisible from
+// the outside: the loop is not failing to correct, it is correcting perfectly
+// to a wrong target, which is why it never recovers.
+//
+// A sample whose magnitude is not close to gravity is measuring gravity plus
+// something else - a vibration spike, a strike, a hard manoeuvre - so it is
+// discarded and the estimate coasts on the gyro until a clean one arrives.
+//
+// Note the limit of this test: it catches TRANSIENT corruption. It cannot catch
+// sustained vibration that rectifies into a DC offset while leaving the
+// magnitude near 1g. Soft-mounting the IMU is the fix for that; this is not a
+// substitute for it.
+#define ACCEL_TRUST_LOW 0.8
+#define ACCEL_TRUST_HIGH 1.2
+
 class Filter {
 public:
   Filter(double timeConstant = FILTER_TIME_CONSTANT);

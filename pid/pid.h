@@ -12,7 +12,20 @@ inline double clamp(double value, double low, double high) {
 // Cap on the accumulated integral, in DShot units. Fixed rather than a
 // constructor argument: it is a windup guard, not a tuning knob, and passing 0
 // by mistake silently disables the I term.
-#define PID_INTEGRAL_LIMIT 200.0
+//
+// Sized against what P can command, because the I term is added straight to the
+// output and so competes with P on equal footing. Roll's Kp is 200 per radian,
+// so a 10 degree error is only 35 units - at the old limit of 200 the
+// integrator could reach the equivalent of a 57 degree P error and bank the
+// craft hard on its own, while P was still whispering. That is an authority
+// limit dressed up as a windup guard.
+//
+// 40 keeps I at roughly the strength of P at a 10 degree lean: enough to trim
+// out a steady bank, not enough to fly the craft somewhere P never asked it to
+// go. Its job is to null a small residual error, so if it ever needs to be
+// raised much beyond this, the real fault is upstream - a false level
+// reference or a mis-scaled Kp - and raising the cap only hides it.
+#define PID_INTEGRAL_LIMIT 40.0
 
 class PID {
 public:

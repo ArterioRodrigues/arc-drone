@@ -26,6 +26,10 @@ void Filter::setLevelReference(double roll, double pitch) {
 std::pair<double, double> Filter::nextAngle(sensors_vec_t gyro, sensors_vec_t accel, double dt) {
     if (!(dt > 0.0)) { return {_roll - _rollTrim, _pitch - _pitchTrim}; }
 
+    double magnitude = sqrt(accel.x * accel.x + accel.y * accel.y + accel.z * accel.z);
+    bool trustAccel = magnitude > ACCEL_TRUST_LOW * SENSORS_GRAVITY_EARTH &&
+                      magnitude < ACCEL_TRUST_HIGH * SENSORS_GRAVITY_EARTH;
+
     std::pair<double, double> accelAngles = anglesFromAccel(accel);
 
     // Derive the blend from dt rather than using a fixed constant. With a fixed
@@ -33,7 +37,12 @@ std::pair<double, double> Filter::nextAngle(sensors_vec_t gyro, sensors_vec_t ac
     // changes with loop rate - at the rate this loop actually runs, an alpha of
     // 0.98 worked out to about 0.1s, short enough that the estimate chased the
     // accelerometer.
-    double alpha = this->_timeConstant / (this->_timeConstant + dt);
+    //
+    // alpha of exactly 1 drops the accelerometer term entirely, leaving pure
+    // gyro integration for this pass. Safe for a handful of passes; if the
+    // accelerometer were rejected indefinitely the estimate would drift away
+    // with gyro bias and nothing would pull it back.
+    double alpha = trustAccel ? this->_timeConstant / (this->_timeConstant + dt) : 1.0;
 
     this->_roll = alpha * (this->_roll + gyro.x * dt) + (1 - alpha) * accelAngles.first;
     this->_pitch = alpha * (this->_pitch + gyro.y * dt) + (1 - alpha) * accelAngles.second;
