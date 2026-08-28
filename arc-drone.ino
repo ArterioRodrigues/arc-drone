@@ -10,6 +10,8 @@
 #include "pid/filter.cpp"
 #include "pid/mixer.h"
 #include "pid/mixer.cpp"
+#include "recorder/recorder.h"
+#include "recorder/recorder.cpp"
 
 Drone::Controller controller;
 MPU6050 mpu6050; //Default to GPIO 21 (SDA) and 22 (SCL)
@@ -160,9 +162,20 @@ void calibrateLevel(uint16_t samples = 500);
 // nothing spins again until the pilot re-arms with the combo below.
 bool killed = false;
 
+// Hover throttle and the attitude actually held in the air can only be measured
+// in flight, with no cable attached. The recorder persists them to NVS on kill
+// and prints them at the next boot. See recorder/recorder.h.
+FlightRecorder recorder(IDLE_BASE);
+
 
 void setup(void) {
   Serial.begin(115200);
+
+  // Opened before anything else can print, so the previous flight's numbers are
+  // the first thing on the console rather than buried under calibration output.
+  recorder.setup();
+  recorder.printLast();
+
   controller.setup();
   mpu6050.setup();
 
@@ -339,6 +352,7 @@ void loop() {
         // props back to idle spin.
         if (ctl->x() && (ctl->buttons() & BUTTON_SHOULDER_L)) {
           killed = false;
+          recorder.reset();
           Serial.println("RE-ARMED");
         }
       } else {
@@ -347,6 +361,8 @@ void loop() {
           if (ctl->a()) {  // Cross
             base = constrain(base + THROTTLE_STEP, IDLE_BASE, MAX_BASE);
             lastThrottleMs = nowMs;
+            // Throttle has been advanced, so there is a flight worth recording.
+            recorder.noteThrottle(base);
           } else if (ctl->b()) {  // Circle
             base = constrain(base - THROTTLE_STEP, IDLE_BASE, MAX_BASE);
             lastThrottleMs = nowMs;
@@ -371,6 +387,10 @@ void loop() {
       // no PID output can leak through. Still a real DShot frame, so the ESCs
       // stay armed and responsive for the re-arm.
       esc.sendDShotPacket(0, 0, 0, 0);
+      // Motors are stopped first, then the record is written: an NVS commit
+      // takes milliseconds, and nothing may sit between the kill and the zero
+      // frame. base is still the flight value here - it is reset below.
+      recorder.save(base);
       base = IDLE_BASE;
       // Kill is the only moment the craft is known to be back on the ground, so
       // it is the only place the liftoff latch can safely be cleared.
@@ -389,6 +409,8 @@ void loop() {
       std::pair<double, double> pair = filter.nextAngle(gyro, acceleration, dt);
       double roll = pair.first;
       double pitch = pair.second;
+
+      recorder.update(roll, pitch, dt);
 
       if (base >= LIFTOFF_BASE) { airborne = true; }
 
