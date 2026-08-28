@@ -9,8 +9,23 @@ Filter::Filter(double timeConstant) {
     this->_pitchTrim = 0.0;
 }
 
+// Roll is exact at any attitude: atan2(y, z) reduces to the roll angle no matter
+// what pitch is doing, because both components carry the same cos(pitch) factor
+// and the ratio cancels it.
+//
+// Pitch does NOT have that luxury. The obvious mirror of the roll expression,
+// atan2(-x, z), is only correct while roll is zero - z shrinks with roll, so the
+// denominator collapses and the reported pitch is inflated. At 30 deg of roll a
+// true 30 deg pitch reads 33.7; at 60 deg of roll a true 20 deg pitch reads 36.
+// The full horizontal magnitude sqrt(y^2 + z^2) is what removes the roll
+// dependence.
+//
+// The error only appears when BOTH axes are tilted, which is why a pure roll or
+// pure pitch bench test passes and the fault only shows up in combined motion -
+// as a phantom pitch error the controller then dutifully corrects for.
 std::pair<double, double> Filter::anglesFromAccel(sensors_vec_t accel) {
-    return {atan2(accel.y, accel.z), atan2(-accel.x, accel.z)};
+    return {atan2(accel.y, accel.z),
+            atan2(-accel.x, sqrt(accel.y * accel.y + accel.z * accel.z))};
 }
 
 void Filter::setAngles(double roll, double pitch) {

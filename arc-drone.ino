@@ -52,10 +52,18 @@ unsigned long lastThrottleMs = 0;
 // exists to serve. The latch clears on kill, which is the only point the craft
 // is known to be back on the ground.
 //
-// Re-measure if the airframe's weight changes: it must stay just ABOVE hover.
-// Too low and grounded wind-up returns; too high and the craft never latches,
-// so steady drift is never trimmed out.
-const double LIFTOFF_BASE = 500;
+// THIS NUMBER IS NOT YET MEASURED. 500 was derived from an assumed ~450 hover,
+// and telemetry has since shown the craft still firmly on the ground at base
+// 630 - so real hover is higher than that, and the gate was opening while
+// grounded on every single run. That is the exact failure the latch exists to
+// prevent, and it saturated both integrators into a permanent bank.
+//
+// It is parked high deliberately. Erring high only means the latch never trips,
+// which with Ki at 0 costs nothing and with Ki live merely leaves steady drift
+// untrimmed. Erring low re-creates the tip-over. Measure hover first (hold Cross
+// from idle and time it: base climbs 100 units/sec from IDLE_BASE), then set
+// this just above the measured figure before putting Ki back.
+const double LIFTOFF_BASE = 1200;
 bool airborne = false;
 
 double base = IDLE_BASE;
@@ -90,29 +98,34 @@ unsigned long lastTelemetryMs = 0;
 // stable hover, and there is no reason to raise them to match roll until pitch
 // actually misbehaves.
 //
-// Ki is now live. It was held at 0 until the craft could hold a clean hover,
-// which it now does. Its job is to trim a STEADY error, and at Ki 0 the loop
-// cannot null one - P simply settles wherever it balances, holding a small
-// permanent bank. That bank is not a stability problem, it is a drift problem: a
-// 3 degree lean is about 0.5 m/s^2 sideways, which builds into metres per second
-// within a few seconds, and with no position sensor nothing ever pulls it back.
-// Ki is what removes the lean itself.
+// Ki is staged back to 0. It was briefly live on the assumption that the craft
+// held a clean hover; it does not - it has never left the ground. Telemetry from
+// a grounded run at base 630 showed both integrators saturated against
+// PID_INTEGRAL_LIMIT while the craft sat level to within 0.1 degree:
 //
-// Ki is in DShot units per (radian-second) and is INDEPENDENT of Kp - the I term
-// is added straight to the output - so the same value gives roll and pitch equal
-// trim authority even though their Kp differ. 50 reaches the ~10 units needed to
-// cancel a 3 degree bank in roughly 4 seconds. Raise it if drift persists, lower
-// it if the craft develops a slow wallow.
+//   roll=-0.002 pitch=-0.002 | pid r= -33.4 p= +40.2 | m1=556 m2=623 m3=637 m4=704
 //
-// Ki depends on the liftoff latch above (LIFTOFF_BASE / airborne) to be safe.
-// Without it the integral accumulates during the throttle ramp while the craft
-// is still on the ground and unable to correct, then dumps that offset as a bank
-// at liftoff.
+// P contributes 0.4 units at that error, so the entire 148-unit spread between
+// m1 and m4 was integrator. That is a hard diagonal bank commanded while level,
+// and it is what tipped the craft over on the floor - the loop was not failing
+// to correct a tilt, it was actively producing one.
+//
+// Worse, it does not recover on its own. The unwind rate is Ki * error, so at
+// 0.002 rad it sheds 0.12 units/sec: over five minutes to walk back from the
+// limit. A saturated integrator here is effectively permanent.
+//
+// It wound up because the liftoff gate below opened while the craft was still
+// grounded (see LIFTOFF_BASE). Both faults have to be fixed before Ki goes back
+// in, and in the right order: measure hover, set LIFTOFF_BASE above it, confirm
+// a stable hover, and only then raise Ki - 50 is the value to return to. Until
+// then the loop cannot null a steady disturbance, so P settles wherever it
+// balances and holds a small permanent bank. That lean is expected, not a fault,
+// and it is a far smaller problem than the one it replaces.
 //
 // Kd is damping and is what stops an overshoot turning into a divergent
 // oscillation. Do not test with Kd 0.
-PID rollPid(200, 50, 10);
-PID pitchPid(100, 50, 5);
+PID rollPid(200, 0, 10);
+PID pitchPid(100, 0, 5);
 
 // Yaw is a RATE controller, not an angle controller: compute() is fed gyro.z as
 // the measurement, so Kp acts as rate damping - it resists rotation rather than
