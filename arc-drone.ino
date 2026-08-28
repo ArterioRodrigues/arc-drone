@@ -133,8 +133,8 @@ unsigned long lastTelemetryMs = 0;
 //
 // Kd is damping and is what stops an overshoot turning into a divergent
 // oscillation. Do not test with Kd 0.
-PID rollPid(200, 50, 10);
-PID pitchPid(200, 50, 10);
+PID rollPid(200, 0, 10);
+PID pitchPid(200, 0, 10);
 
 // Yaw is a RATE controller, not an angle controller: compute() is fed gyro.z as
 // the measurement, so Kp acts as rate damping - it resists rotation rather than

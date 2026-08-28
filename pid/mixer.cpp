@@ -19,13 +19,15 @@
 // levels the craft. Positive pitch is nose-down, so pitch is subtracted from the
 // front pair (m1/m2) and added to the back pair (m3/m4).
 //
-// Yaw follows prop rotation: m1/m4 spin one way, m2/m3 the other.
+// Yaw follows prop rotation: m1/m4 spin one way, m2/m3 the other. Verified on
+// the bench: the diagonal pair m2/m3 must spool up to counter a clockwise yaw,
+// so yaw is subtracted from m1/m4 and added to m2/m3.
 Motors Mixer::compute(double base, double roll, double pitch, double yaw) {
     double correction[4] = {
-        +roll - pitch + yaw,  // m1 front-left
-        -roll - pitch - yaw,  // m2 front-right
-        +roll + pitch - yaw,  // m3 back-left
-        -roll + pitch + yaw,  // m4 back-right
+        +roll - pitch - yaw,  // m1 front-left
+        -roll - pitch + yaw,  // m2 front-right
+        +roll + pitch + yaw,  // m3 back-left
+        -roll + pitch - yaw,  // m4 back-right
     };
 
     double lowest = correction[0];
