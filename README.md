@@ -240,7 +240,7 @@ scales with speed, so an asymmetric mix twists the frame. The result is a craft
 that yaws, keeps yawing, and spins in.
 
 Yaw control only works if the props are arranged correctly. The mixer pairs them
-diagonally — `m1`/`m4` take `-yaw`, `m2`/`m3` take `+yaw`:
+diagonally — `m1`/`m4` take `+yaw`, `m2`/`m3` take `-yaw`:
 
 ```
    m1 (CW)  ────  m2 (CCW)

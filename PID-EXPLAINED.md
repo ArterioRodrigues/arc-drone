@@ -211,15 +211,19 @@ Physical layout as flown, viewed from above (nose up the page):
 
 * `m1`/`m4` are the clockwise diagonal, `m2`/`m3` the counter-clockwise one.
 * Each prop must match its motor — a CW motor needs a CW prop.
-* Bench-verified: a clockwise yaw is countered by spooling up `m2`/`m3`, which
-  is why yaw is subtracted from `m1`/`m4` and added to `m2`/`m3` below.
+* Bench-verified: a prop's reaction torque on the frame is opposite to its own
+  rotation, so a clockwise yaw is countered by spooling up the CW pair `m1`/`m4`
+  (their reaction torque is CCW). That is why yaw is added to `m1`/`m4` and
+  subtracted from `m2`/`m3` below. Spooling up `m2`/`m3` instead is positive
+  feedback: it flies fine on the bench and spins up the instant it leaves the
+  ground.
 
 ```c
 double correction[4] = {
-    +roll - pitch - yaw,  // m1 front-left
-    -roll - pitch + yaw,  // m2 front-right
-    +roll + pitch + yaw,  // m3 back-left
-    -roll + pitch - yaw,  // m4 back-right
+    +roll - pitch + yaw,  // m1 front-left
+    -roll - pitch - yaw,  // m2 front-right
+    +roll + pitch - yaw,  // m3 back-left
+    -roll + pitch + yaw,  // m4 back-right
 };
 ```
 
@@ -313,9 +317,10 @@ only reveals itself in the air.
 5. **Yaw motor direction.** Only needed once yaw gains are non-zero. There is no
    step-1 equivalent — gravity gives an absolute tilt reference, nothing gives
    one for heading. Set yaw to (30, 0, 0) temporarily, note each motor's spin
-   direction, then rotate the frame nose-right: the **counter-clockwise-spinning**
-   pair (m2/m3) must speed up. If the clockwise pair does, yaw is backwards — fix
-   the prop/motor rotation directions, not the software.
+   direction, then rotate the frame nose-right: the **clockwise-spinning** pair
+   (m1/m4) must speed up, because their reaction torque on the frame is CCW. If
+   the counter-clockwise pair does, yaw is backwards — fix the prop/motor
+   rotation directions, not the software.
 6. Only once all of the above pass, fit props.
 
 Never fix a wrong-way axis by negating something upstream; see the mixer note.
