@@ -67,16 +67,33 @@ accelerometer."
 constant of `alpha * dt / (1 - alpha)`, which changes silently with loop rate.
 Deriving it from `dt` pins the behaviour to a time constant in seconds.
 
-With `FILTER_TIME_CONSTANT = 1.0` and `dt = 0.004`, `alpha = 0.996` — each pass
-is 99.6% gyro. But at 250 passes/sec the accelerometer is still the only thing
-setting the DC level. Crossover is `1 / (2π × 1.0) ≈ 0.16 Hz`: above it the gyro
+With `FILTER_TIME_CONSTANT = 3.0` and `dt = 0.004`, `alpha = 0.9987` — each pass
+is 99.87% gyro. But at 250 passes/sec the accelerometer is still the only thing
+setting the DC level. Crossover is `1 / (2π × 3.0) ≈ 0.05 Hz`: above it the gyro
 defines the estimate, below it the accelerometer does, completely.
 
-> **Any steady error in the accelerometer becomes, within about a second, a
-> steady error in the angle the controller is trying to zero.**
+> **Any steady error in the accelerometer becomes, within about a time
+> constant, a steady error in the angle the controller is trying to zero.**
 
 A long time constant _delays_ accel corruption; it does not reject it. A
 transient survives, a sustained offset wins outright.
+
+**Why 3.0 and not 1.0.** The accelerometer measures specific force, not gravity.
+A quad that is leaning *and accelerating in the direction of that lean* has its
+thrust along body z, so the horizontal components that would reveal the tilt
+largely cancel: the accelerometer reports level while the craft is demonstrably
+not. Magnitude stays near 1 g, so the trust gate below does not fire either -
+the reading is wrong but entirely plausible.
+
+This was observed directly. The craft flew away in a consistent direction with a
+visible lean while the flight recorder logged an airborne pitch of 0.02 deg. At a
+1.0 s constant the false "level" won within about a second and a genuine lean
+dissolved out of the estimate, so the controller held the tilt believing it was
+flat. Pilot trim could not fix it either: trim offsets the estimate, but the
+accelerometer kept dragging the estimate back, and the absolute reference wins.
+
+3.0 s rides out the transient. The cost is gyro bias, which is calibrated at
+every boot and leaves roughly 0.3 deg of drift over a 3-second window.
 
 **Accel trust gate.** Samples whose magnitude is outside 0.8–1.2 g are not
 measuring gravity alone, so `alpha` is forced to 1.0 and the estimate coasts on

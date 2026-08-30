@@ -25,10 +25,10 @@
 // SUBTRACTED from m2/m3, so a clockwise yaw is countered by the CW pair.
 Motors Mixer::compute(double base, double roll, double pitch, double yaw) {
     double correction[4] = {
-        +roll - pitch + yaw,  // m1 front-left
-        -roll - pitch - yaw,  // m2 front-right
-        +roll + pitch - yaw,  // m3 back-left
-        -roll + pitch + yaw,  // m4 back-right
+        +roll - pitch + yaw, // m1 front-left
+        -roll - pitch - yaw, // m2 front-right
+        +roll + pitch - yaw, // m3 back-left
+        -roll + pitch + yaw, // m4 back-right
     };
 
     double lowest = correction[0];

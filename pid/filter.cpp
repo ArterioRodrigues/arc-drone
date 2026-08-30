@@ -26,8 +26,7 @@ Filter::Filter(double timeConstant) {
 // pure pitch bench test passes and the fault only shows up in combined motion -
 // as a phantom pitch error the controller then dutifully corrects for.
 std::pair<double, double> Filter::anglesFromAccel(sensors_vec_t accel) {
-    return {atan2(accel.y, accel.z),
-            atan2(-accel.x, sqrt(accel.y * accel.y + accel.z * accel.z))};
+    return {atan2(accel.y, accel.z), atan2(-accel.x, sqrt(accel.y * accel.y + accel.z * accel.z))};
 }
 
 void Filter::setAngles(double roll, double pitch) {
@@ -47,13 +46,12 @@ void Filter::setPilotTrim(double roll, double pitch) {
 
 std::pair<double, double> Filter::nextAngle(sensors_vec_t gyro, sensors_vec_t accel, double dt) {
     if (!(dt > 0.0)) {
-        return {_roll - _rollTrim - _rollTrimPilot,
-                _pitch - _pitchTrim - _pitchTrimPilot};
+        return {_roll - _rollTrim - _rollTrimPilot, _pitch - _pitchTrim - _pitchTrimPilot};
     }
 
     double magnitude = sqrt(accel.x * accel.x + accel.y * accel.y + accel.z * accel.z);
-    bool trustAccel = magnitude > ACCEL_TRUST_LOW * SENSORS_GRAVITY_EARTH &&
-                      magnitude < ACCEL_TRUST_HIGH * SENSORS_GRAVITY_EARTH;
+    bool trustAccel =
+        magnitude > ACCEL_TRUST_LOW * SENSORS_GRAVITY_EARTH && magnitude < ACCEL_TRUST_HIGH * SENSORS_GRAVITY_EARTH;
 
     std::pair<double, double> accelAngles = anglesFromAccel(accel);
 

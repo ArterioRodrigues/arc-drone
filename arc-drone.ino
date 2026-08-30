@@ -30,9 +30,40 @@ const double MAX_BASE = 1600;
 // button ramps base at loop rate. 5 units per 50 ms gives a predictable
 // 100 units/sec, which also makes hover throttle measurable without a serial
 // cable: it is IDLE_BASE + 100 * seconds_held_to_lift_off.
-const double THROTTLE_STEP = 5.0;
+const double THROTTLE_STEP = 1.0;
 const unsigned long THROTTLE_REPEAT_MS = 50;
 unsigned long lastThrottleMs = 0;
+
+// Right stick attitude command.
+//
+// The PID setpoint has always been a parameter; until now the loop hard-coded
+// it to 0, so the craft could only ever try to sit flat. With nothing measuring
+// horizontal position - no GPS, no optical flow - a quad that leaves the ground
+// with any velocity keeps that velocity, level or not. The pilot IS the position
+// loop, and this is the stick that closes it.
+//
+// Distinct from pilot trim: trim moves the DEFINITION of level and persists,
+// while this is a momentary command that returns to zero when the stick does.
+// Trim cancels a standing bias; the stick cancels accumulated momentum.
+//
+// 8 degrees is a deliberately small authority. At that angle the craft
+// accelerates sideways at about 1.4 m/s^2, which is enough to arrest a drift
+// within a small room but not enough for a full stick deflection to fly it into
+// a wall before the throttle can be cut.
+const double MAX_STICK_ANGLE_DEG = 8.0;
+
+// Sticks rarely rest at exactly zero, and a few counts of offset held for a
+// whole flight is a commanded lean the pilot never asked for - the same standing
+// bias this session spent so long chasing. Anything inside the deadband reads as
+// centred, and the scaling below starts from the edge of it so there is no jump
+// as the stick leaves.
+const int STICK_DEADBAND = 40;
+const int STICK_RANGE = 512;
+
+// Latest commanded lean, radians. Written when a gamepad report arrives and read
+// by the control loop, which runs at its own fixed rate.
+double commandedRoll = 0;
+double commandedPitch = 0;
 
 // Throttle at which the craft is taken to have committed to leaving the ground,
 // and the latch that records it.
@@ -184,6 +215,19 @@ Mixer mixer;
 // Arduino's auto-generated prototypes do not carry default arguments, so
 // declare this explicitly.
 void calibrateLevel(uint16_t samples = 500);
+
+// Stick axis to commanded angle in radians. Measured from the edge of the
+// deadband rather than from zero, so the command starts at 0 the instant the
+// stick leaves centre instead of stepping straight to the deadband's worth of
+// angle.
+double stickToAngle(int axis) {
+  if (axis > -STICK_DEADBAND && axis < STICK_DEADBAND) { return 0.0; }
+
+  double past = axis > 0 ? axis - STICK_DEADBAND : axis + STICK_DEADBAND;
+  double fraction = clamp(past / (double)(STICK_RANGE - STICK_DEADBAND), -1.0, 1.0);
+
+  return fraction * MAX_STICK_ANGLE_DEG * PI / 180.0;
+}
 
 // Latched by Triangle. Survives a controller dropout on purpose: once killed,
 // nothing spins again until the pilot re-arms with the combo below.
@@ -372,6 +416,11 @@ void loop() {
       // Without a controller nothing below drives the ESCs, and they would time
       // out and disarm while we wait for a connection. Keep pinging them.
       esc.keepAlive();
+      // A dropout freezes the last report, so a stick that happened to be
+      // deflected would otherwise be held as a command indefinitely - the craft
+      // would fly off in that direction with nothing able to countermand it.
+      commandedRoll = 0;
+      commandedPitch = 0;
       // Stale timestamp would otherwise produce a bogus dt on the first frame
       // after the controller shows up.
       lastTime = micros();
@@ -394,6 +443,10 @@ void loop() {
     if (ctl->hasData()) {
       if (ctl->y() && !killed) {  // Triangle
         killed = true;
+        // A stick held at the moment of the kill must not survive it and be
+        // waiting as a standing command at the next re-arm.
+        commandedRoll = 0;
+        commandedPitch = 0;
         Serial.println("KILLED - press Square + L1 to re-arm");
       }
 
@@ -430,6 +483,15 @@ void loop() {
           filter.setPilotTrim(trim.roll(), trim.pitch());
           trim.printCurrent();
         }
+
+        // Right stick commands a lean. Push the direction you want to GO: the
+        // craft accelerates the way it leans, so pulling back arrests a forward
+        // drift.
+        //
+        // axisRY reads -512 fully forward, and positive pitch is nose-down, so
+        // the Y axis is negated and the X axis is not.
+        commandedRoll = stickToAngle(ctl->axisRX());
+        commandedPitch = -stickToAngle(ctl->axisRY());
 
         unsigned long nowMs = millis();
         if (nowMs - lastThrottleMs >= THROTTLE_REPEAT_MS) {
@@ -512,8 +574,8 @@ void loop() {
       // damping is what shows up as oscillation.
       //
       // No correction factors here on purpose: the mixer owns the signs.
-      double rollResult  = rollPid.compute(0, roll, gyro.x, dt);
-      double pitchResult = pitchPid.compute(0, pitch, gyro.y, dt);
+      double rollResult  = rollPid.compute(commandedRoll, roll, gyro.x, dt);
+      double pitchResult = pitchPid.compute(commandedPitch, pitch, gyro.y, dt);
       double yawResult   = yawPid.compute(0, gyro.z, 0, dt);
 
       Motors motors = mixer.compute(base, rollResult, pitchResult, yawResult);

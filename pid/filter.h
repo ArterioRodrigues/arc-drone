@@ -11,7 +11,26 @@
 // constant lets that corrupt the estimate, the controller "corrects" a tilt that
 // is not there, and the craft accelerates away in one direction. Long enough to
 // ride out those transients, short enough that gyro drift cannot accumulate.
-#define FILTER_TIME_CONSTANT 1.0
+//
+// Raised from 1.0 after this exact failure was observed in flight: the craft
+// visibly leaned and flew off in one direction while the recorder logged an
+// airborne lean of 0.02 deg. A leaning, accelerating quad has its thrust along
+// body z, so the horizontal components the tilt would show up in largely cancel
+// and the accelerometer reports LEVEL - plausibly, and with a magnitude near 1g
+// that sails through the trust gate below. At 1.0 that false "level" won within
+// about a second, so a real lean simply dissolved out of the estimate and the
+// controller held the tilt believing it was flat.
+//
+// 3.0 is affordable because the gyro bias is calibrated at every boot: the
+// residual after calibration is on the order of 0.001 rad/s, or about 0.3 deg
+// over a 3-second window. That is the price, and it buys an estimate that
+// survives the transient instead of being talked out of it.
+//
+// Do not raise this much further without a better vertical reference. Past a
+// few seconds the bias term stops being negligible, and the accelerometer is
+// still the ONLY thing anchoring this estimate to true vertical - a longer
+// window delays accel corruption but also delays every genuine correction.
+#define FILTER_TIME_CONSTANT 3.0
 
 // Band around 1g within which an accelerometer sample is believed to be
 // measuring gravity and nothing else.
