@@ -34,7 +34,7 @@ const double THROTTLE_STEP = 1.0;
 const unsigned long THROTTLE_REPEAT_MS = 50;
 unsigned long lastThrottleMs = 0;
 
-// Right stick attitude command.
+// Left stick attitude command.
 //
 // The PID setpoint has always been a parameter; until now the loop hard-coded
 // it to 0, so the craft could only ever try to sit flat. With nothing measuring
@@ -484,14 +484,14 @@ void loop() {
           trim.printCurrent();
         }
 
-        // Right stick commands a lean. Push the direction you want to GO: the
+        // Left stick commands a lean. Push the direction you want to GO: the
         // craft accelerates the way it leans, so pulling back arrests a forward
         // drift.
         //
-        // axisRY reads -512 fully forward, and positive pitch is nose-down, so
+        // axisY reads -512 fully forward, and positive pitch is nose-down, so
         // the Y axis is negated and the X axis is not.
-        commandedRoll = stickToAngle(ctl->axisRX());
-        commandedPitch = -stickToAngle(ctl->axisRY());
+        commandedRoll = stickToAngle(ctl->axisX());
+        commandedPitch = -stickToAngle(ctl->axisY());
 
         unsigned long nowMs = millis();
         if (nowMs - lastThrottleMs >= THROTTLE_REPEAT_MS) {
