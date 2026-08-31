@@ -50,11 +50,20 @@ unsigned long lastThrottleMs = 0;
 // while this is a momentary command that returns to zero when the stick does.
 // Trim cancels a standing bias; the stick cancels accumulated momentum.
 //
-// 8 degrees is a deliberately small authority. At that angle the craft
-// accelerates sideways at about 1.4 m/s^2, which is enough to arrest a drift
-// within a small room but not enough for a full stick deflection to fly it into
-// a wall before the throttle can be cut.
-const double MAX_STICK_ANGLE_DEG = 8.0;
+// 15 degrees, raised from 8 after the original value proved too weak to arrest a
+// drift in a small room. Authority scales with the sine of this angle: 8 gave
+// about 1.4 m/s^2, so a craft already moving at 2 m/s needed ~1.4 s just to
+// reach a stop and travelled another metre and a half the wrong way first -
+// which from the pilot's side is indistinguishable from the stick doing nothing.
+// 15 gives about 2.5 m/s^2 and roughly halves that.
+//
+// Still conservative; angle mode on a normal quad runs 20-30. Two things get
+// worse as it climbs, though, and both argue for raising it a step at a time.
+// Vertical thrust falls with the cosine, so the craft sinks slightly when
+// leaned - 0.4% at 8 degrees, 3.4% at 15, 6% at 20 - and a full deflection
+// commands Kp * angle DShot units of correction, which is 39 units at 15 and
+// eats into the headroom the mixer has to work with near full throttle.
+const double MAX_STICK_ANGLE_DEG = 15.0;
 
 // Sticks rarely rest at exactly zero, and a few counts of offset held for a
 // whole flight is a commanded lean the pilot never asked for - the same standing

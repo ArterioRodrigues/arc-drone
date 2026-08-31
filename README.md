@@ -115,7 +115,7 @@ void loop() {
 | **Triangle** | **Kill switch** — latches: motors are commanded to zero and PID state is cleared |
 | Square + L1 | Re-arm after a kill (two-button combo so a stray press can't restart the props) |
 | D-pad | Attitude trim — Up/Down adjust pitch, Left/Right adjust roll, 0.25° per press. Shifts the definition of level and persists to NVS on kill. |
-| Left stick | Commanded lean, ±8°. Push the direction you want to go; the craft accelerates the way it leans. Returns to level when centred. |
+| Left stick | Commanded lean, ±15°. Push the direction you want to go; the craft accelerates the way it leans. Returns to level when centred. |
 
 Throttle trim is rate-limited rather than applied every loop pass; adjust
 `THROTTLE_STEP` and `THROTTLE_REPEAT_MS` in `arc-drone.ino` to taste.
