@@ -114,7 +114,8 @@ void loop() {
 | Circle | Throttle down — `base` −1 per 50 ms while held (floored at idle) |
 | **Triangle** | **Kill switch** — latches: motors are commanded to zero and PID state is cleared |
 | Square + L1 | Re-arm after a kill (two-button combo so a stray press can't restart the props) |
-| D-pad Up | Toggle bench mode — forces full correction authority so the loop can be verified at low throttle. **Props off.** |
+| D-pad | Attitude trim — Up/Down adjust pitch, Left/Right adjust roll, 0.25° per press. Shifts the definition of level and persists to NVS on kill. |
+| Left stick | Commanded lean, ±8°. Push the direction you want to go; the craft accelerates the way it leans. Returns to level when centred. |
 
 Throttle trim is rate-limited rather than applied every loop pass; adjust
 `THROTTLE_STEP` and `THROTTLE_REPEAT_MS` in `arc-drone.ino` to taste.
@@ -173,7 +174,7 @@ That is roughly 15 ms of pure delay out of the loop.
 Telemetry lives in `printTelemetry()` and is controlled by `TELEMETRY_ENABLED`
 in `arc-drone.ino`. Set it to `1` for bench work and back to `0` before flying.
 It is a compile-time switch rather than commented-out code so the body still has
-to compile and cannot go stale. Event messages (kill, re-arm, bench mode) are
+to compile and cannot go stale. Event messages (kill, re-arm, trim changes) are
 left on — they fire once, not every pass.
 
 Raising the DLPF to 44 Hz lets more gyro noise through, which the D term
@@ -201,29 +202,22 @@ of the filtered angle. Differentiating the filtered angle amplifies sensor noise
 and inherits the complementary filter's lag, and both weaken damping — which
 shows up as oscillation.
 
-Correction strength ramps in over `IDLE_BASE → FULL_AUTHORITY_BASE` and is full
-above that:
+Corrections are not scaled by throttle. An earlier build ramped an `authority`
+factor in over `IDLE_BASE → FULL_AUTHORITY_BASE`; that has been removed, because
+the mixer already scales corrections into whatever headroom the current throttle
+allows, which is the limit that actually matters.
 
-```
-authority = (base - IDLE_BASE) / (FULL_AUTHORITY_BASE - IDLE_BASE)   // clamped
-```
+The integrator is gated instead, and only the integrator: below `LIFTOFF_BASE`
+it is cleared every pass, leaving P and D live so tilting the frame on the bench
+still moves the motors.
 
-This is only a soft start, so corrections are not jerky the instant throttle is
-cracked off idle. The real physical limit is enforced by the mixer, which scales
-corrections into whatever headroom the current throttle allows — so there is no
-need to keep suppressing them all the way up to hover.
-
-Authority never falls to zero; it is floored at `MIN_AUTHORITY` so the loop
-always shows some response. Below `GROUND_BASE` only the integrator is held
-clear, leaving P and D live so tilting the frame on the bench still moves the
-motors.
-
-`GROUND_BASE` must sit just **below actual hover throttle**, not down at idle.
-The throttle trim climbs at 20 units/sec, so a threshold of 300 against a ~1400
-hover left the integrator accumulating for ~55 seconds while the craft was still
-on the ground — long enough to saturate at `iLimit` and dump a full-scale
-correction into the motors the instant it got light. Retune it if hover throttle
-changes.
+`LIFTOFF_BASE` must sit just **below actual hover throttle**, not down at idle.
+What matters is how many seconds the craft spends grounded above it — the
+throttle ramps at 20 units/sec, so every 20 units between the gate and real
+hover is another second of the integrator winding against ground it has no
+authority to level off. Set it too low and it saturates before liftoff; set it
+above hover and it never latches, so a steady lean is never trimmed at all.
+Retune it if hover throttle changes.
 
 ### Yaw and prop directions
 
@@ -259,46 +253,45 @@ check this before touching `Kp`.
 
 ### Throttle and hover
 
-`HOVER_BASE` is the throttle the airframe hovers at, and `GROUND_BASE` derives
-from it at 85%. Below `GROUND_BASE` the integrator is held clear so it cannot
-wind up against ground it has no authority to level off.
+`LIFTOFF_BASE` is the throttle above which the craft is taken to have committed
+to leaving the ground. Below it the integrator is held clear so it cannot wind
+up against ground it has no authority to level off.
 
-Set `HOVER_BASE` on the **low** side if unsure. Too high parks `GROUND_BASE`
-above real hover, so the integrator never switches on and the drift it exists to
-remove stays. Too low only widens the ground window, and a craft sitting on flat
-ground that was calibrated on that same ground reports near-zero error, so it
-integrates almost nothing. Do not take off from a slope.
+Set it just **below** real hover. Too high and it never latches, so the
+integrator never switches on and the drift it exists to remove stays — the craft
+then behaves exactly as it would with `Ki` at 0. Too low widens the ground
+window; a craft on flat ground that was calibrated on that same ground reports
+near-zero error and integrates almost nothing, but any pilot trim shows up as a
+real error and *will* wind up. Do not take off from a slope.
 
-`Ki` on roll and pitch is currently staged at `0`. It exists to trim out steady
-drift, but drift is tolerable and instability is not, so it stays out of the loop
-until the craft holds a clean hover. Raise it to `50` once hover is stable and
-the only remaining complaint is a slow lean. Until then the loop cannot null a
-steady disturbance — P always stops short, so it settles wherever it balances the
-disturbance and holds a small bank. That lean is expected, not a fault.
+`Ki` on roll and pitch is currently `25`. It exists to trim out steady drift.
+Without it the loop cannot null a steady disturbance — P always stops short, so
+it settles wherever it balances the disturbance and holds a small bank. That
+lean is expected, not a fault. It was run at `50` and halved after a slow wallow
+appeared; a wallow is the cue that it is too high, and a persistent lean the cue
+that it is too low or never latching.
 
 **Measuring hover throttle without a serial cable:** the throttle trim is a known
 ramp — `THROTTLE_STEP` per `THROTTLE_REPEAT_MS`, currently 20 units/sec from
 `IDLE_BASE`. Hold **Cross** from idle and time it with a stopwatch:
 
 ```
-HOVER_BASE ≈ IDLE_BASE + 20 × seconds_to_lift_off
+hover ≈ IDLE_BASE + 20 × seconds_to_lift_off
 ```
 
-So lifting off after 35 s of held throttle means roughly `100 + 700 = 800`.
+The flight recorder also reports `max base` and `base at kill` at the next boot,
+which is usually easier than a stopwatch.
 
 ### Why the bench test looks weak
 
 Tilting the frame on the ground at idle will not level it, and that is expected:
 
-* Authority is scaled down at low throttle — at `base = 150` it is `0.167`, so
-  corrections run at a sixth strength.
-* The integrator is force-cleared below `GROUND_BASE`.
+* The integrator is force-cleared below `LIFTOFF_BASE`, so only P and D respond.
 * At idle the props make almost no thrust, so tens of units of differential
   cannot lift the frame against the ground regardless of gains.
 
-Use bench mode (D-pad Up, props off) to force `authority = 1.0`, and judge the
-*direction and proportionality* of the motor numbers rather than whether the
-craft physically levels.
+Judge the *direction and proportionality* of the motor numbers rather than
+whether the craft physically levels.
 
 Note that `Kd` can never affect a **static** tilt. The D term is `-Kd * gyro`,
 and a craft sitting still has zero gyro rate, so D is exactly zero for any `Kd`.
@@ -323,8 +316,8 @@ positive tilt — which means the low side is the one with the correction
 *subtracted*. Getting this backwards turns the loop into positive feedback: the
 craft drives itself further into the tilt and oscillates instead of levelling.
 
-Verify on the bench (props off, D-pad Up for bench mode) before every flight
-after touching wiring: tilt right, and `m2`/`m4` must rise.
+Verify on the bench (props off) before every flight after touching wiring: tilt
+right, and `m2`/`m4` must rise.
 
 The correct signs depend on how the IMU is physically mounted, which cannot be
 determined from the code. `ROLL_SIGN` and `PITCH_SIGN` in `arc-drone.ino` exist

@@ -27,9 +27,13 @@ const double IDLE_BASE = 100;
 const double MAX_BASE = 1600;
 
 // The button handler runs every loop pass, so without a repeat interval a held
-// button ramps base at loop rate. 5 units per 50 ms gives a predictable
-// 100 units/sec, which also makes hover throttle measurable without a serial
-// cable: it is IDLE_BASE + 100 * seconds_held_to_lift_off.
+// button ramps base at loop rate. 1 unit per 50 ms gives a predictable
+// 20 units/sec, which also makes hover throttle measurable without a serial
+// cable: it is IDLE_BASE + 20 * seconds_held_to_lift_off.
+//
+// Anything that changes this rate also changes how long the craft spends
+// grounded above LIFTOFF_BASE, which is what sizes that gate's safety margin -
+// see the note there before touching it.
 const double THROTTLE_STEP = 1.0;
 const unsigned long THROTTLE_REPEAT_MS = 50;
 unsigned long lastThrottleMs = 0;
@@ -90,20 +94,38 @@ double commandedPitch = 0;
 // and the integrator would never run in the one regime it exists to serve.
 //
 // Below-hover is safe here because what matters is not which side of hover the
-// gate sits on, it is how many SECONDS the craft spends grounded above it. The
-// ramp is 100 units/sec, so 420 leaves (455-420)/100 = 0.35 s of grounded
-// integration, which at Ki 50 and a 2.6 degree error accumulates well under one
-// DShot unit. The earlier failure was not the 400 threshold itself; it was that
-// the craft could not lift off at all, so it sat above the gate for tens of
-// seconds and wound to saturation.
+// gate sits on, it is how many SECONDS the craft spends grounded above it. At
+// the current 20 units/sec ramp (THROTTLE_STEP 1.0 per 50 ms) every 20 units
+// between this gate and actual hover is a full second of grounded integration,
+// so the old 420 left about two seconds of it - five times what the original
+// 100 units/sec ramp implied, and enough to matter once trim is non-zero.
+//
+// Raised to 500 to close that window. Recorded flights reached max base 525 and
+// 560, so the gate is still crossed, but it now latches at or after liftoff
+// rather than well before it.
+//
+// The tradeoff is that the failure mode flips. It is no longer windup on the
+// ground; it is that a gentle flight which never advances past 500 leaves the
+// integrator disabled for its whole duration, so a steady lean is never trimmed
+// and the craft drifts exactly as it did with Ki 0. If a flight drifts steadily
+// and the recorded lean is large, check that max base actually passed 500
+// before blaming the gains.
+//
+// Note that P and D run regardless - only the integral is gated - so the craft
+// still levels itself either way. This gate decides only whether a STEADY error
+// gets trimmed out.
+//
+// The earlier failure was not the 400 threshold itself; it was that the craft
+// could not lift off at all, so it sat above the gate for tens of seconds and
+// wound to saturation.
 //
 // That remains the failure mode to watch. If the craft ever stops lifting off -
-// heavier battery, tired pack, cold - it will sit above 420 winding up, and the
-// symptom is the one already seen: large pid outputs with the angles near zero,
-// and a hard diagonal bank on the ground. Kill clears the latch.
+// heavier battery, tired pack, cold - it will sit above the gate winding up, and
+// the symptom is the one already seen: large pid outputs with the angles near
+// zero, and a hard diagonal bank on the ground. Kill clears the latch.
 //
 // Re-measure if the airframe's weight changes: it must stay just below hover.
-const double LIFTOFF_BASE = 420;
+const double LIFTOFF_BASE = 500;
 bool airborne = false;
 
 double base = IDLE_BASE;
@@ -157,7 +179,9 @@ unsigned long lastTelemetryMs = 0;
 // Ki is in DShot units per (radian-second) and is INDEPENDENT of Kp - the I term
 // is added straight to the output - so the same value gives roll and pitch equal
 // trim authority even though their Kp differ. 50 covers a 9-unit trim in a few
-// seconds. Lower it if the craft develops a slow wallow.
+// seconds; it now runs at 25, having been halved after a slow wallow appeared in
+// the air. A wallow is the cue that this is too high, and a lean that never goes
+// away the cue that it is too low - or that the liftoff latch never fired.
 //
 // It remains entirely dependent on the liftoff latch (LIFTOFF_BASE / airborne).
 // Without a working gate the integral accumulates while the craft is grounded
@@ -552,11 +576,21 @@ void loop() {
 
       if (base >= LIFTOFF_BASE) { airborne = true; }
 
-      // Only averaged while airborne. On the ground the craft reads level, so
+      // Only averaged while airborne, and only while the sticks are centred.
+      //
+      // The airborne gate is because the craft reads level on the ground, so
       // including the throttle ramp pulls the recorded lean toward zero by an
       // amount that varies with how long the ramp took - which is what made the
       // first two flights' figures incomparable.
-      if (airborne) { recorder.update(roll, pitch, dt); }
+      //
+      // The stick gate is because this average is the ONLY way to read the
+      // craft's standing bias without a serial cable, and a commanded lean is
+      // indistinguishable from a mechanical one once averaged. Without it the
+      // record reports the pilot's thumb rather than the airframe, which is
+      // useless for the trim it exists to inform.
+      if (airborne && commandedRoll == 0 && commandedPitch == 0) {
+        recorder.update(roll, pitch, dt);
+      }
 
       if (!airborne) {
         // Still on the ground, so the craft cannot level itself and the
