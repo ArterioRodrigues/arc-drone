@@ -34,7 +34,7 @@ const double MAX_BASE = 1600;
 // Anything that changes this rate also changes how long the craft spends
 // grounded above LIFTOFF_BASE, which is what sizes that gate's safety margin -
 // see the note there before touching it.
-const double THROTTLE_STEP = 1.0;
+const double THROTTLE_STEP = 5.0;
 const unsigned long THROTTLE_REPEAT_MS = 50;
 unsigned long lastThrottleMs = 0;
 
@@ -240,7 +240,7 @@ PID pitchPid(150, 25, 10);
 // and it is the one axis where a wrong sign is positive feedback - the
 // correction adds to the rotation and the craft accelerates into a spin instead
 // of tipping over and stopping.
-PID yawPid(30, 0, 0);
+PID yawPid(50, 0, 0);
 
 Filter filter;
 Mixer mixer;
